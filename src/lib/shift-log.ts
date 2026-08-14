@@ -238,7 +238,7 @@ const SAMPLES: Array<Omit<ShiftEvent, "id" | "timestamp" | "sync" | "logged_by">
 let sampleIndex = 0;
 
 export function structureRecording(loggedBy: string): ShiftEvent {
-  const sample = SAMPLES[sampleIndex % SAMPLES.length];
+  const sample = SAMPLES[sampleIndex % SAMPLES.length]!;
   sampleIndex += 1;
   return {
     ...sample,
