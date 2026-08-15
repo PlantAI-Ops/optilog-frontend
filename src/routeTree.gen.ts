@@ -16,6 +16,7 @@ import { Route as ReportRouteImport } from './routes/report'
 import { Route as TimelineRouteImport } from './routes/timeline'
 import { Route as ConsoleIndexRouteImport } from './routes/console/index'
 import { Route as ConsoleEventsRouteImport } from './routes/console/events'
+import { Route as ConsoleIntegrationsRouteImport } from './routes/console/integrations'
 import { Route as ConsoleRcaRouteImport } from './routes/console/rca'
 import { Route as ConsoleShiftsRouteImport } from './routes/console/shifts'
 import { Route as ConsoleTeamsRouteImport } from './routes/console/teams'
@@ -55,6 +56,11 @@ const ConsoleEventsRoute = ConsoleEventsRouteImport.update({
   path: '/events',
   getParentRoute: () => ConsoleRouteRoute,
 } as any)
+const ConsoleIntegrationsRoute = ConsoleIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
 const ConsoleRcaRoute = ConsoleRcaRouteImport.update({
   id: '/rca',
   path: '/rca',
@@ -78,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
   '/console/events': typeof ConsoleEventsRoute
+  '/console/integrations': typeof ConsoleIntegrationsRoute
   '/console/rca': typeof ConsoleRcaRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
@@ -89,6 +96,7 @@ export interface FileRoutesByTo {
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
   '/console/events': typeof ConsoleEventsRoute
+  '/console/integrations': typeof ConsoleIntegrationsRoute
   '/console/rca': typeof ConsoleRcaRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
@@ -102,6 +110,7 @@ export interface FileRoutesById {
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
   '/console/events': typeof ConsoleEventsRoute
+  '/console/integrations': typeof ConsoleIntegrationsRoute
   '/console/rca': typeof ConsoleRcaRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
@@ -116,6 +125,7 @@ export interface FileRouteTypes {
     | '/report'
     | '/timeline'
     | '/console/events'
+    | '/console/integrations'
     | '/console/rca'
     | '/console/shifts'
     | '/console/teams'
@@ -127,6 +137,7 @@ export interface FileRouteTypes {
     | '/report'
     | '/timeline'
     | '/console/events'
+    | '/console/integrations'
     | '/console/rca'
     | '/console/shifts'
     | '/console/teams'
@@ -139,6 +150,7 @@ export interface FileRouteTypes {
     | '/report'
     | '/timeline'
     | '/console/events'
+    | '/console/integrations'
     | '/console/rca'
     | '/console/shifts'
     | '/console/teams'
@@ -204,6 +216,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleEventsRouteImport
       parentRoute: typeof ConsoleRouteRoute
     }
+    '/console/integrations': {
+      id: '/console/integrations'
+      path: '/integrations'
+      fullPath: '/console/integrations'
+      preLoaderRoute: typeof ConsoleIntegrationsRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
     '/console/rca': {
       id: '/console/rca'
       path: '/rca'
@@ -230,6 +249,7 @@ declare module '@tanstack/react-router' {
 
 interface ConsoleRouteRouteChildren {
   ConsoleEventsRoute: typeof ConsoleEventsRoute
+  ConsoleIntegrationsRoute: typeof ConsoleIntegrationsRoute
   ConsoleRcaRoute: typeof ConsoleRcaRoute
   ConsoleShiftsRoute: typeof ConsoleShiftsRoute
   ConsoleTeamsRoute: typeof ConsoleTeamsRoute
@@ -238,6 +258,7 @@ interface ConsoleRouteRouteChildren {
 
 const ConsoleRouteRouteChildren: ConsoleRouteRouteChildren = {
   ConsoleEventsRoute: ConsoleEventsRoute,
+  ConsoleIntegrationsRoute: ConsoleIntegrationsRoute,
   ConsoleRcaRoute: ConsoleRcaRoute,
   ConsoleShiftsRoute: ConsoleShiftsRoute,
   ConsoleTeamsRoute: ConsoleTeamsRoute,
