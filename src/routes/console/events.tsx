@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { ConsoleShell, SourceBadge } from "@/components/console/ConsoleShell";
 import {
@@ -89,9 +89,8 @@ function EventsPage() {
           </thead>
           <tbody>
             {rows.map((e) => (
-              <>
+              <Fragment key={e.id}>
                 <tr
-                  key={e.id}
                   onClick={() => setOpenId(openId === e.id ? null : e.id)}
                   className="cursor-pointer border-b border-border/60 hover:bg-secondary/40"
                 >
@@ -111,7 +110,7 @@ function EventsPage() {
                   </td>
                 </tr>
                 {openId === e.id ? (
-                  <tr key={`${e.id}_detail`} className="border-b border-border/60 bg-secondary/20">
+                  <tr className="border-b border-border/60 bg-secondary/20">
                     <td colSpan={6} className="px-4 py-4">
                       <div className="grid gap-4 md:grid-cols-2">
                         <dl className="space-y-2 text-xs">
@@ -131,7 +130,7 @@ function EventsPage() {
                     </td>
                   </tr>
                 ) : null}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
