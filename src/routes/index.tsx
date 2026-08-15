@@ -3,16 +3,19 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, Check, Mic, Pencil, Plus, Square } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { EventEditor } from "@/components/shift/EventEditor";
+import { useAuth } from "@/lib/auth";
 import {
   addEvent,
   blankEvent,
-  login,
   startShift,
   structureRecording,
   unresolvedCount,
   useShiftLog,
   type ShiftEvent,
 } from "@/lib/shift-log";
+import { useShifts, useStartShift } from "@/hooks/use-shifts";
+import { useEvents, useCreateEvent } from "@/hooks/use-events";
+import type { CreateEventRequest } from "@/types/api";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -34,8 +37,20 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
+  const { isAuthenticated, isLoading } = useAuth();
   const state = useShiftLog();
-  if (!state.user) return <LoginScreen />;
+
+  if (isLoading) {
+    return (
+      <AppShell>
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!isAuthenticated || !state.user) return <LoginScreen />;
   if (!state.shiftActive) return <StartShiftScreen />;
   return <RecordScreen />;
 }
@@ -43,8 +58,28 @@ function Index() {
 /* ------------------------------- login -------------------------------- */
 
 function LoginScreen() {
-  const [name, setName] = useState("A. Mensah");
-  const [password, setPassword] = useState("demo1234");
+  const { login } = useAuth();
+  const [email, setEmail] = useState("admin@optilog.com");
+  const [password, setPassword] = useState("password123");
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleLogin = async () => {
+    setError("");
+    setIsSubmitting(true);
+    try {
+      await login(email, password);
+      // Also set local shift-log state for UI
+      const { login: shiftLogin } = await import("@/lib/shift-log");
+      const userName = email.split("@")[0] ?? "Operator";
+      shiftLogin(userName, "operator");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Login failed";
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <AppShell>
@@ -55,13 +90,19 @@ function LoginScreen() {
             Your session stays active across shifts.
           </p>
         </div>
+        {error ? (
+          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive">
+            {error}
+          </div>
+        ) : null}
         <label className="block">
           <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            Username
+            Email
           </span>
           <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             className="mt-1 h-14 w-full rounded-2xl border border-input bg-secondary px-4 text-lg outline-none focus:border-ring"
           />
         </label>
@@ -79,17 +120,11 @@ function LoginScreen() {
         <div className="space-y-3 pt-2">
           <button
             type="button"
-            onClick={() => login(name || "Operator", "operator")}
-            className="h-16 w-full rounded-2xl bg-primary text-lg font-black text-primary-foreground"
+            onClick={handleLogin}
+            disabled={isSubmitting}
+            className="h-16 w-full rounded-2xl bg-primary text-lg font-black text-primary-foreground disabled:opacity-50"
           >
-            Sign in as operator
-          </button>
-          <button
-            type="button"
-            onClick={() => login(name || "Supervisor", "supervisor")}
-            className="h-16 w-full rounded-2xl border border-border bg-secondary text-lg font-bold text-secondary-foreground"
-          >
-            Sign in as supervisor
+            {isSubmitting ? "Signing in..." : "Sign in"}
           </button>
         </div>
       </div>
@@ -101,43 +136,58 @@ function LoginScreen() {
 
 function StartShiftScreen() {
   const state = useShiftLog();
+  const { user } = useAuth();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
+  const plantIds = user?.plant_ids ?? [];
+  const firstPlantId = plantIds[0] ?? "";
+
+  const { data: shiftsData } = useShifts({
+    plant_id: firstPlantId,
+    status: "active",
+  });
+
+  const { data: eventsData } = useEvents({
+    plant_id: firstPlantId,
+    status: "draft",
+  });
+
+  const activeShift = shiftsData?.items?.[0];
+  const openIssues = eventsData?.items?.filter((e) => e.status === "draft") ?? [];
 
   return (
     <AppShell>
       <div className="flex flex-1 flex-col justify-between gap-6 py-4">
         <div className="space-y-6">
           <h1 className="text-3xl font-black tracking-tight">
-            {greeting}, {state.user?.name}.
+            {greeting}, {user?.name ?? state.user?.name}.
           </h1>
           <dl className="space-y-3 rounded-2xl border border-border bg-card p-4 text-lg">
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Shift</dt>
-              <dd className="font-bold">{state.shiftName}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Production area</dt>
-              <dd className="font-bold">{state.line}</dd>
+              <dd className="font-bold">{activeShift?.shift_type ?? state.shiftName}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Role</dt>
-              <dd className="font-bold capitalize">{state.user?.role}</dd>
+              <dd className="font-bold capitalize">{user?.role ?? state.user?.role}</dd>
             </div>
           </dl>
-          <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4">
-            <p className="flex items-center gap-2 text-base font-bold text-warning">
-              <AlertTriangle className="size-5" />
-              Previous shift: {state.carriedOver.length} unresolved issues
-            </p>
-            <ul className="mt-3 space-y-2 text-base text-foreground">
-              {state.carriedOver.map((issue) => (
-                <li key={issue} className="leading-snug">
-                  • {issue}
-                </li>
-              ))}
-            </ul>
-          </div>
+          {openIssues.length > 0 ? (
+            <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4">
+              <p className="flex items-center gap-2 text-base font-bold text-warning">
+                <AlertTriangle className="size-5" />
+                Previous shift: {openIssues.length} unresolved issues
+              </p>
+              <ul className="mt-3 space-y-2 text-base text-foreground">
+                {openIssues.map((issue) => (
+                  <li key={issue.id} className="leading-snug">
+                    • {issue.observation || issue.event_type}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
         <button
           type="button"
@@ -162,6 +212,7 @@ function RecordScreen() {
   const [seconds, setSeconds] = useState(0);
   const [clarifyValue, setClarifyValue] = useState("");
   const timerRef = useRef<number | null>(null);
+  const createEventMutation = useCreateEvent();
 
   useEffect(() => {
     if (phase !== "recording") {
@@ -192,6 +243,20 @@ function RecordScreen() {
 
   const commit = (event: ShiftEvent) => {
     addEvent(event);
+    // Also send to API if online
+    if (state.online) {
+      const payload: CreateEventRequest = {
+        plant_id: "",
+        event_type: event.event_type as "production_stop",
+        timestamp: event.timestamp,
+        observation: event.observation,
+        severity: "medium",
+      };
+      if (event.reported_cause) {
+        payload.reported_cause = event.reported_cause;
+      }
+      createEventMutation.mutate(payload);
+    }
     setDraft(null);
     setPhase("idle");
   };

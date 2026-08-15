@@ -1,16 +1,10 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Sparkles } from "lucide-react";
-import { ConsoleShell, SourceBadge, StatCard } from "@/components/console/ConsoleShell";
-import {
-  SOURCE_LABEL,
-  STATUS_LABEL,
-  events,
-  incidents,
-  lineName,
-  shiftById,
-  teamName,
-} from "@/lib/ops-model";
+import { ConsoleShell, StatCard } from "@/components/console/ConsoleShell";
+import { useEvents } from "@/hooks/use-events";
+import { useActions } from "@/hooks/use-actions";
+import { usePlants } from "@/hooks/use-assets";
 
 export const Route = createFileRoute("/console/rca")({
   head: () => ({
@@ -32,10 +26,23 @@ export const Route = createFileRoute("/console/rca")({
 });
 
 function RcaPage() {
-  const [id, setId] = useState(incidents[0]!.id);
-  const incident = incidents.find((i) => i.id === id)!;
-  const shift = shiftById(incident.shift_id);
-  const linked = events.filter((e) => incident.event_ids.includes(e.id));
+  const { data: plants } = usePlants();
+  const plantId = plants?.[0]?.id ?? "";
+
+  // Get escalated/resolved events as incidents
+  const { data: eventsData } = useEvents({
+    plant_id: plantId,
+    status: "confirmed",
+  });
+  const { data: actionsData } = useActions();
+
+  const incidents = eventsData?.items ?? [];
+  const actions = actionsData?.items ?? [];
+
+  const [selectedId, setSelectedId] = useState<string>("");
+  const selectedEvent = incidents.find((e) => e.id === selectedId) ?? incidents[0];
+
+  const linkedActions = actions.filter((a) => a.event_id === selectedEvent?.id);
 
   return (
     <ConsoleShell title="Root cause analysis" subtitle="Incidents as first-class investigations">
@@ -45,119 +52,82 @@ function RcaPage() {
             Incidents
           </header>
           <ul className="divide-y divide-border/60">
-            {incidents.map((i) => (
-              <li key={i.id}>
+            {incidents.map((e) => (
+              <li key={e.id}>
                 <button
                   type="button"
-                  onClick={() => setId(i.id)}
+                  onClick={() => setSelectedId(e.id)}
                   className={`w-full px-4 py-3 text-left ${
-                    i.id === id ? "bg-secondary" : "hover:bg-secondary/50"
+                    e.id === (selectedId || incidents[0]?.id) ? "bg-secondary" : "hover:bg-secondary/50"
                   }`}
                 >
-                  <p className="text-sm font-medium">
-                    {i.ref} {i.title}
-                  </p>
+                  <p className="text-sm font-medium">{e.observation || e.event_type}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {lineName(i.line_id)} · {i.duration_minutes} min · {STATUS_LABEL[i.status]}
+                    {e.event_type} · {e.severity ?? "—"} · {e.status}
                   </p>
                 </button>
               </li>
             ))}
+            {incidents.length === 0 ? (
+              <li className="px-4 py-6 text-center text-sm text-muted-foreground">
+                No incidents found.
+              </li>
+            ) : null}
           </ul>
         </section>
 
         <section className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Incident" value={incident.ref} hint={incident.date} />
-            <StatCard label="Duration" value={`${incident.duration_minutes} min`} tone="warning" />
-            <StatCard
-              label="Shift"
-              value={shift ? `${teamName(shift.team_id)} / ${shift.name}` : "—"}
-              hint={lineName(incident.line_id)}
-            />
-            <StatCard label="Owner" value={incident.owner} hint={`Due ${incident.due_date}`} />
-          </div>
+          {selectedEvent ? (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <StatCard label="Event" value={selectedEvent.event_type} hint={selectedEvent.timestamp.slice(0, 10)} />
+                <StatCard label="Severity" value={selectedEvent.severity ?? "—"} tone={selectedEvent.severity === "critical" ? "danger" : selectedEvent.severity === "high" ? "warning" : "default"} />
+                <StatCard label="Status" value={selectedEvent.status} />
+                <StatCard label="Source" value={selectedEvent.source?.system ?? "—"} />
+              </div>
 
-          <div className="flex gap-3 rounded-xl border border-primary/40 bg-primary/10 p-4">
-            <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-            <div>
-              <p className="text-sm font-semibold text-primary">AI correlation</p>
-              <p className="mt-1 text-sm text-foreground/90">{incident.ai_insight}</p>
+              <div className="rounded-xl border border-primary/40 bg-primary/10 p-4">
+                <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
+                <div>
+                  <p className="text-sm font-semibold text-primary">Event details</p>
+                  <p className="mt-1 text-sm text-foreground/90">{selectedEvent.observation}</p>
+                </div>
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-2">
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <h2 className="text-sm font-semibold">Details</h2>
+                  <dl className="mt-3 space-y-3">
+                    <Field label="Reported cause" value={selectedEvent.reported_cause ?? "—"} />
+                    <Field label="Verified cause" value={selectedEvent.verified_cause ?? "—"} />
+                    <Field label="Asset" value={selectedEvent.asset?.name ?? "—"} />
+                    <Field label="Duration" value={selectedEvent.duration_seconds ? `${Math.round(selectedEvent.duration_seconds / 60)} min` : "—"} />
+                  </dl>
+                </div>
+
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <h2 className="text-sm font-semibold">Actions</h2>
+                  {linkedActions.length > 0 ? (
+                    <ul className="mt-3 space-y-2">
+                      {linkedActions.map((a) => (
+                        <li key={a.id} className="rounded-lg border border-border p-3">
+                          <p className="text-sm font-medium">{a.type}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{a.description}</p>
+                          <p className="mt-1 text-xs capitalize">{a.status}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-muted-foreground">No actions linked yet.</p>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-xl border border-border bg-card p-8 text-center text-muted-foreground">
+              Select an incident to view details.
             </div>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <div className="rounded-xl border border-border bg-card p-4">
-              <h2 className="text-sm font-semibold">Timeline</h2>
-              <ol className="mt-3 space-y-3">
-                {incident.timeline.map((t) => (
-                  <li key={`${t.time}-${t.label}`} className="flex gap-3">
-                    <span className="w-12 shrink-0 text-xs tabular-nums text-muted-foreground">
-                      {t.time}
-                    </span>
-                    <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" />
-                    <span className="flex-1 text-sm">{t.label}</span>
-                    <SourceBadge>{SOURCE_LABEL[t.source]}</SourceBadge>
-                  </li>
-                ))}
-              </ol>
-            </div>
-
-            <div className="rounded-xl border border-border bg-card p-4">
-              <h2 className="text-sm font-semibold">Evidence</h2>
-              <ul className="mt-3 space-y-2">
-                {incident.evidence.map((e) => (
-                  <li
-                    key={e.label}
-                    className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
-                  >
-                    {e.label}
-                    <SourceBadge>{SOURCE_LABEL[e.source]}</SourceBadge>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">Investigation</h2>
-            <dl className="mt-3 grid gap-3 md:grid-cols-3">
-              <Field label="Problem" value={incident.problem} />
-              <Field label="Observed condition" value={incident.observed_condition} />
-              <Field label="Root cause" value={incident.root_cause} />
-            </dl>
-
-            <h3 className="mt-5 text-sm font-semibold">5 Why</h3>
-            <ol className="mt-2 space-y-2">
-              {incident.five_why.map((w, idx) => (
-                <li key={idx} className="rounded-lg border border-border p-3">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    {idx + 1}. {w.question || "Not yet answered"}
-                  </p>
-                  <p className="mt-1 text-sm">{w.answer || "—"}</p>
-                </li>
-              ))}
-            </ol>
-
-            <dl className="mt-5 grid gap-3 md:grid-cols-2">
-              <Field label="Corrective action" value={incident.corrective_action} />
-              <Field label="Preventive action" value={incident.preventive_action} />
-            </dl>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card">
-            <header className="border-b border-border px-4 py-3 text-sm font-semibold">
-              Linked operational events
-            </header>
-            <ul className="divide-y divide-border/60">
-              {linked.map((e) => (
-                <li key={e.id} className="flex items-center justify-between gap-4 px-4 py-3">
-                  <span className="text-sm">{e.description}</span>
-                  <SourceBadge>{SOURCE_LABEL[e.source]}</SourceBadge>
-                </li>
-              ))}
-            </ul>
-          </div>
+          )}
         </section>
       </div>
     </ConsoleShell>

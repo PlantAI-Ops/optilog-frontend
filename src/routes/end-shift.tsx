@@ -3,6 +3,8 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Mic } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { endShift, unresolvedCount, useShiftLog } from "@/lib/shift-log";
+import { useAuth } from "@/lib/auth";
+import { useSubmitHandover, useCloseShift } from "@/hooks/use-shifts";
 
 export const Route = createFileRoute("/end-shift")({
   head: () => ({
@@ -24,11 +26,41 @@ export const Route = createFileRoute("/end-shift")({
 
 function EndShiftPage() {
   const state = useShiftLog();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [note, setNote] = useState(state.handover);
   const unresolved = unresolvedCount(state);
   const resolved = state.events.filter((e) => e.status === "resolved").length;
-  const isSupervisor = state.user?.role === "supervisor";
+  const isSupervisor = user?.role === "supervisor" || state.user?.role === "supervisor";
+
+  const submitHandoverMutation = useSubmitHandover();
+  const closeShiftMutation = useCloseShift();
+
+  const handleEndShift = () => {
+    // Update local state
+    endShift(note);
+
+    // Also call API if we have a shift ID
+    const shiftId = "current"; // In real app, this would be the actual shift ID
+    const unresolvedIssues = state.events
+      .filter((e) => e.status === "unresolved")
+      .map((e) => e.observation || e.event_type);
+
+    submitHandoverMutation.mutate(
+      { id: shiftId, data: { notes: note, open_issues: unresolvedIssues } },
+      {
+        onSuccess: () => {
+          closeShiftMutation.mutate(shiftId, {
+            onSuccess: () => navigate({ to: "/report" }),
+          });
+        },
+        onError: () => {
+          // Still navigate even if API fails
+          navigate({ to: "/report" });
+        },
+      },
+    );
+  };
 
   return (
     <AppShell title="End of shift">
@@ -67,10 +99,7 @@ function EndShiftPage() {
         <div className="mt-auto space-y-3">
           <button
             type="button"
-            onClick={() => {
-              endShift(note);
-              navigate({ to: "/report" });
-            }}
+            onClick={handleEndShift}
             className="h-20 w-full rounded-3xl bg-primary text-xl font-black text-primary-foreground"
           >
             End Shift

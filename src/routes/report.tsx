@@ -2,6 +2,8 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { BadgeCheck, FileText, Share2 } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { approveReport, formatTime, unresolvedCount, useShiftLog } from "@/lib/shift-log";
+import { useAuth } from "@/lib/auth";
+import { useShiftSummary } from "@/hooks/use-shifts";
 
 export const Route = createFileRoute("/report")({
   head: () => ({
@@ -23,7 +25,18 @@ export const Route = createFileRoute("/report")({
 
 function ReportPage() {
   const state = useShiftLog();
-  const isSupervisor = state.user?.role === "supervisor";
+  const { user } = useAuth();
+  const isSupervisor = user?.role === "supervisor" || state.user?.role === "supervisor";
+
+  // Try to get summary from API
+  const shiftId = "current";
+  const { data: apiSummary } = useShiftSummary(shiftId);
+
+  const eventCount = apiSummary?.event_count ?? state.events.length;
+  const openIssues = apiSummary?.open_issues ?? unresolvedCount(state);
+  const downtime = apiSummary?.downtime_seconds
+    ? Math.round(apiSummary.downtime_seconds / 60)
+    : 0;
 
   return (
     <AppShell title="Shift report">
@@ -35,8 +48,9 @@ function ReportPage() {
           </h1>
           <p className="text-base text-muted-foreground">
             {state.startedAt ? formatTime(state.startedAt) : "—"} to{" "}
-            {state.endedAt ? formatTime(state.endedAt) : "—"} · {state.events.length} events ·{" "}
-            {unresolvedCount(state)} unresolved
+            {state.endedAt ? formatTime(state.endedAt) : "—"} · {eventCount} events ·{" "}
+            {openIssues} unresolved
+            {downtime > 0 ? ` · ${downtime} min downtime` : ""}
           </p>
           {state.handover ? (
             <div className="mt-4 rounded-xl bg-secondary p-3">

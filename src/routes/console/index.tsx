@@ -1,18 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ConsoleShell, StatCard, SourceBadge } from "@/components/console/ConsoleShell";
-import {
-  SOURCE_LABEL,
-  achievement,
-  assetRollup,
-  incidents,
-  lineName,
-  plantSummary,
-  teamName,
-  teamSummary,
-  teams,
-  todayEvents,
-  todayShifts,
-} from "@/lib/ops-model";
+import { useShifts } from "@/hooks/use-shifts";
+import { useEvents } from "@/hooks/use-events";
+import { useTeams } from "@/hooks/use-teams";
+import { usePlants } from "@/hooks/use-assets";
 
 export const Route = createFileRoute("/console/")({
   head: () => ({
@@ -34,22 +25,45 @@ export const Route = createFileRoute("/console/")({
 });
 
 function Dashboard() {
-  const s = plantSummary();
-  const rollup = assetRollup().slice(0, 4);
+  // Fetch data from API
+  const { data: plants } = usePlants();
+  const plantId = plants?.[0]?.id ?? "";
+
+  const { data: shiftsData } = useShifts({ plant_id: plantId });
+  const { data: eventsData } = useEvents({ plant_id: plantId });
+  const { data: teams } = useTeams(plantId);
+
+  const shifts = shiftsData?.items ?? [];
+  const events = eventsData?.items ?? [];
+
+  // Calculate summary from real data
+  const totalProduced = shifts.reduce((sum, s) => sum + (s.summary?.event_count ?? 0), 0);
+  const totalDowntime = Math.round(
+    shifts.reduce((sum, s) => sum + (s.summary?.downtime_seconds ?? 0), 0) / 60,
+  );
+  const activeIssues = events.filter(
+    (e) => e.status === "draft" || e.status === "confirmed",
+  ).length;
+  const unresolved = events.filter((e) => e.status === "draft").length;
 
   return (
     <ConsoleShell title="Plant dashboard" subtitle="Today — all teams, all shifts">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Production achievement" value={`${s.achievement}%`} hint={`${s.produced.toLocaleString()} of ${s.target.toLocaleString()} units`} tone="success" />
-        <StatCard label="Downtime" value={`${s.downtime} min`} hint="Across 3 active lines" tone="warning" />
-        <StatCard label="Active issues" value={s.activeIssues} hint={`${s.unresolved} unresolved`} tone="danger" />
-        <StatCard label="RCA pending" value={s.rcaPending} hint={`${s.quality} quality events today`} />
+        <StatCard
+          label="Active shifts"
+          value={shifts.length}
+          hint={`${shifts.filter((s) => s.status === "active").length} in progress`}
+          tone="success"
+        />
+        <StatCard label="Downtime" value={`${totalDowntime} min`} tone="warning" />
+        <StatCard label="Active issues" value={activeIssues} hint={`${unresolved} unresolved`} tone="danger" />
+        <StatCard label="Total events" value={events.length} hint="All sources" />
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-3">
         <section className="xl:col-span-2 rounded-xl border border-border bg-card">
           <header className="flex items-center justify-between border-b border-border px-4 py-3">
-            <h2 className="text-sm font-semibold">Team / shift performance</h2>
+            <h2 className="text-sm font-semibold">Shifts</h2>
             <Link to="/console/shifts" className="text-xs font-medium text-primary">
               All shifts
             </Link>
@@ -57,50 +71,52 @@ function Dashboard() {
           <table className="w-full text-sm">
             <thead className="text-xs uppercase tracking-wide text-muted-foreground">
               <tr className="border-b border-border">
-                <th className="px-4 py-2 text-left font-medium">Team / shift</th>
-                <th className="px-4 py-2 text-left font-medium">Line</th>
-                <th className="px-4 py-2 text-right font-medium">Achievement</th>
+                <th className="px-4 py-2 text-left font-medium">Team</th>
+                <th className="px-4 py-2 text-left font-medium">Type</th>
+                <th className="px-4 py-2 text-right font-medium">Events</th>
                 <th className="px-4 py-2 text-right font-medium">Downtime</th>
                 <th className="px-4 py-2 text-right font-medium">Status</th>
               </tr>
             </thead>
             <tbody>
-              {todayShifts.map((shift) => (
+              {shifts.map((shift) => (
                 <tr key={shift.id} className="border-b border-border/60 last:border-0">
-                  <td className="px-4 py-3 font-medium">
-                    {teamName(shift.team_id)} / {shift.name}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{lineName(shift.line_id)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{achievement(shift)}%</td>
+                  <td className="px-4 py-3 font-medium">{shift.team_id}</td>
+                  <td className="px-4 py-3 text-muted-foreground capitalize">{shift.shift_type}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{shift.summary?.event_count ?? 0}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-warning">
-                    {shift.downtime_minutes} min
+                    {Math.round((shift.summary?.downtime_seconds ?? 0) / 60)} min
                   </td>
                   <td className="px-4 py-3 text-right">
                     <SourceBadge>{shift.status}</SourceBadge>
                   </td>
                 </tr>
               ))}
+              {shifts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
+                    No shifts found. Configure a plant to get started.
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </section>
 
         <section className="rounded-xl border border-border bg-card p-4">
-          <h2 className="text-sm font-semibold">Teams at a glance</h2>
+          <h2 className="text-sm font-semibold">Teams</h2>
           <ul className="mt-3 space-y-3">
-            {teams.map((team) => {
-              const t = teamSummary(team.id);
-              return (
-                <li key={team.id} className="rounded-lg border border-border p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">{team.name}</p>
-                    <span className="text-sm font-bold tabular-nums">{t.achievement}%</span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {team.supervisor} · {t.events} events · {t.downtime} min down · {t.open} open
-                  </p>
-                </li>
-              );
-            })}
+            {teams?.map((team) => (
+              <li key={team.id} className="rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">{team.name}</p>
+                  <span className="text-xs text-muted-foreground">{team.member_ids.length} members</span>
+                </div>
+              </li>
+            ))}
+            {(!teams || teams.length === 0) ? (
+              <li className="text-sm text-muted-foreground">No teams configured.</li>
+            ) : null}
           </ul>
         </section>
       </div>
@@ -108,53 +124,48 @@ function Dashboard() {
       <div className="mt-6 grid gap-6 xl:grid-cols-3">
         <section className="xl:col-span-2 rounded-xl border border-border bg-card">
           <header className="flex items-center justify-between border-b border-border px-4 py-3">
-            <h2 className="text-sm font-semibold">Latest operational events</h2>
+            <h2 className="text-sm font-semibold">Latest events</h2>
             <Link to="/console/events" className="text-xs font-medium text-primary">
               Event stream
             </Link>
           </header>
           <ul className="divide-y divide-border/60">
-            {todayEvents.slice(0, 5).map((e) => (
+            {events.slice(0, 5).map((e) => (
               <li key={e.id} className="flex items-start justify-between gap-4 px-4 py-3">
                 <div>
-                  <p className="text-sm font-medium">{e.description}</p>
+                  <p className="text-sm font-medium">{e.observation || e.event_type}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {lineName(e.line_id)} · {e.event_type} / {e.category} · {teamName(e.team_id)}
+                    {e.event_type} · {e.severity ?? "no severity"}
                   </p>
                 </div>
-                <SourceBadge>{SOURCE_LABEL[e.source]}</SourceBadge>
+                <SourceBadge>{e.source?.system ?? e.source?.type ?? "unknown"}</SourceBadge>
               </li>
             ))}
+            {events.length === 0 ? (
+              <li className="px-4 py-6 text-center text-sm text-muted-foreground">
+                No events yet. Events will appear here as they are recorded.
+              </li>
+            ) : null}
           </ul>
         </section>
 
         <section className="rounded-xl border border-border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Open investigations</h2>
-            <Link to="/console/rca" className="text-xs font-medium text-primary">
-              RCA
-            </Link>
-          </div>
+          <h2 className="text-sm font-semibold">Quick stats</h2>
           <ul className="mt-3 space-y-3">
-            {incidents.map((i) => (
-              <li key={i.id} className="rounded-lg border border-border p-3">
-                <p className="text-sm font-medium">
-                  {i.ref} {i.title}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {lineName(i.line_id)} · {i.duration_minutes} min · owner {i.owner}
-                </p>
-              </li>
-            ))}
-          </ul>
-          <h3 className="mt-5 text-sm font-semibold">Worst assets (30 days)</h3>
-          <ul className="mt-2 space-y-2 text-xs text-muted-foreground">
-            {rollup.map((r) => (
-              <li key={r.asset.id} className="flex justify-between">
-                <span>{r.asset.name}</span>
-                <span className="tabular-nums">{r.downtime} min</span>
-              </li>
-            ))}
+            <li className="rounded-lg border border-border p-3">
+              <p className="text-sm font-medium">Total events</p>
+              <p className="text-2xl font-bold tabular-nums">{events.length}</p>
+            </li>
+            <li className="rounded-lg border border-border p-3">
+              <p className="text-sm font-medium">Active shifts</p>
+              <p className="text-2xl font-bold tabular-nums">
+                {shifts.filter((s) => s.status === "active").length}
+              </p>
+            </li>
+            <li className="rounded-lg border border-border p-3">
+              <p className="text-sm font-medium">Teams</p>
+              <p className="text-2xl font-bold tabular-nums">{teams?.length ?? 0}</p>
+            </li>
           </ul>
         </section>
       </div>

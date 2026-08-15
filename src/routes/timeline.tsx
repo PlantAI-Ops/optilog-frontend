@@ -3,13 +3,10 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { ChevronDown, CircleCheck, CircleDot, CircleAlert, Pencil, Play } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { EventEditor } from "@/components/shift/EventEditor";
-import {
-  STATUS_LABEL,
-  formatTime,
-  updateEvent,
-  useShiftLog,
-  type ShiftEvent,
-} from "@/lib/shift-log";
+import { useShiftLog, formatTime, STATUS_LABEL, type ShiftEvent } from "@/lib/shift-log";
+import { useAuth } from "@/lib/auth";
+import { useShiftTimeline } from "@/hooks/use-shifts";
+import { useUpdateEvent } from "@/hooks/use-events";
 
 export const Route = createFileRoute("/timeline")({
   head: () => ({
@@ -37,9 +34,25 @@ function statusIcon(status: ShiftEvent["status"]) {
 
 function TimelinePage() {
   const state = useShiftLog();
+  const { user } = useAuth();
   const [openId, setOpenId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
-  const isSupervisor = state.user?.role === "supervisor";
+  const isSupervisor = user?.role === "supervisor" || state.user?.role === "supervisor";
+  const updateEventMutation = useUpdateEvent();
+
+  // Try to fetch real timeline data
+  const shiftId = state.shiftActive ? "current" : "";
+  const { data: timelineData } = useShiftTimeline(shiftId);
+
+  // Use API timeline if available, fall back to local state
+  const timelineEvents = timelineData ?? state.events.map((e) => ({
+    id: e.id,
+    event_type: e.event_type,
+    status: e.status === "resolved" ? "confirmed" : e.status === "unresolved" ? "draft" : "confirmed",
+    severity: "medium",
+    observation: e.observation,
+    timestamp: e.timestamp,
+  }));
 
   const editing = state.events.find((e) => e.id === editId);
   if (editing) {
@@ -49,7 +62,8 @@ function TimelinePage() {
           event={editing}
           onCancel={() => setEditId(null)}
           onSave={(e) => {
-            updateEvent(e.id, e);
+            const payload = { observation: e.observation };
+            updateEventMutation.mutate({ id: e.id, data: payload });
             setEditId(null);
           }}
         />
