@@ -14,6 +14,7 @@ import { Route as ConsoleRouteRouteImport } from './routes/console/route'
 import { Route as EndShiftRouteImport } from './routes/end-shift'
 import { Route as ReportRouteImport } from './routes/report'
 import { Route as TimelineRouteImport } from './routes/timeline'
+import { Route as ConsoleIndexRouteImport } from './routes/console/index'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,40 +41,55 @@ const TimelineRoute = TimelineRouteImport.update({
   path: '/timeline',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConsoleIndexRoute = ConsoleIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/console': typeof ConsoleRouteRoute
+  '/console': typeof ConsoleRouteRouteWithChildren
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/': typeof ConsoleIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/console': typeof ConsoleRouteRoute
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console': typeof ConsoleIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/console': typeof ConsoleRouteRoute
+  '/console': typeof ConsoleRouteRouteWithChildren
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/': typeof ConsoleIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/console' | '/end-shift' | '/report' | '/timeline'
+  fullPaths:
+    '/' | '/console' | '/end-shift' | '/report' | '/timeline' | '/console/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/console' | '/end-shift' | '/report' | '/timeline'
-  id: '__root__' | '/' | '/console' | '/end-shift' | '/report' | '/timeline'
+  to: '/' | '/end-shift' | '/report' | '/timeline' | '/console'
+  id:
+    | '__root__'
+    | '/'
+    | '/console'
+    | '/end-shift'
+    | '/report'
+    | '/timeline'
+    | '/console/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  ConsoleRouteRoute: typeof ConsoleRouteRoute
+  ConsoleRouteRoute: typeof ConsoleRouteRouteWithChildren
   EndShiftRoute: typeof EndShiftRoute
   ReportRoute: typeof ReportRoute
   TimelineRoute: typeof TimelineRoute
@@ -116,12 +132,31 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TimelineRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/console/': {
+      id: '/console/'
+      path: '/'
+      fullPath: '/console/'
+      preLoaderRoute: typeof ConsoleIndexRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
   }
 }
 
+interface ConsoleRouteRouteChildren {
+  ConsoleIndexRoute: typeof ConsoleIndexRoute
+}
+
+const ConsoleRouteRouteChildren: ConsoleRouteRouteChildren = {
+  ConsoleIndexRoute: ConsoleIndexRoute,
+}
+
+const ConsoleRouteRouteWithChildren = ConsoleRouteRoute._addFileChildren(
+  ConsoleRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  ConsoleRouteRoute: ConsoleRouteRoute,
+  ConsoleRouteRoute: ConsoleRouteRouteWithChildren,
   EndShiftRoute: EndShiftRoute,
   ReportRoute: ReportRoute,
   TimelineRoute: TimelineRoute,
