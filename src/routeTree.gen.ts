@@ -15,6 +15,7 @@ import { Route as EndShiftRouteImport } from './routes/end-shift'
 import { Route as ReportRouteImport } from './routes/report'
 import { Route as TimelineRouteImport } from './routes/timeline'
 import { Route as ConsoleIndexRouteImport } from './routes/console/index'
+import { Route as ConsoleEventsRouteImport } from './routes/console/events'
 import { Route as ConsoleShiftsRouteImport } from './routes/console/shifts'
 import { Route as ConsoleTeamsRouteImport } from './routes/console/teams'
 
@@ -48,6 +49,11 @@ const ConsoleIndexRoute = ConsoleIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ConsoleRouteRoute,
 } as any)
+const ConsoleEventsRoute = ConsoleEventsRouteImport.update({
+  id: '/events',
+  path: '/events',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
 const ConsoleShiftsRoute = ConsoleShiftsRouteImport.update({
   id: '/shifts',
   path: '/shifts',
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/events': typeof ConsoleEventsRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
   '/console/': typeof ConsoleIndexRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/events': typeof ConsoleEventsRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
   '/console': typeof ConsoleIndexRoute
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/events': typeof ConsoleEventsRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
   '/console/': typeof ConsoleIndexRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/end-shift'
     | '/report'
     | '/timeline'
+    | '/console/events'
     | '/console/shifts'
     | '/console/teams'
     | '/console/'
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/end-shift'
     | '/report'
     | '/timeline'
+    | '/console/events'
     | '/console/shifts'
     | '/console/teams'
     | '/console'
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/end-shift'
     | '/report'
     | '/timeline'
+    | '/console/events'
     | '/console/shifts'
     | '/console/teams'
     | '/console/'
@@ -173,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleIndexRouteImport
       parentRoute: typeof ConsoleRouteRoute
     }
+    '/console/events': {
+      id: '/console/events'
+      path: '/events'
+      fullPath: '/console/events'
+      preLoaderRoute: typeof ConsoleEventsRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
     '/console/shifts': {
       id: '/console/shifts'
       path: '/shifts'
@@ -191,12 +210,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface ConsoleRouteRouteChildren {
+  ConsoleEventsRoute: typeof ConsoleEventsRoute
   ConsoleShiftsRoute: typeof ConsoleShiftsRoute
   ConsoleTeamsRoute: typeof ConsoleTeamsRoute
   ConsoleIndexRoute: typeof ConsoleIndexRoute
 }
 
 const ConsoleRouteRouteChildren: ConsoleRouteRouteChildren = {
+  ConsoleEventsRoute: ConsoleEventsRoute,
   ConsoleShiftsRoute: ConsoleShiftsRoute,
   ConsoleTeamsRoute: ConsoleTeamsRoute,
   ConsoleIndexRoute: ConsoleIndexRoute,
