@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { CloudOff, CloudUpload, Wifi, WifiOff } from "lucide-react";
+import { CloudOff, CloudUpload, Monitor, Wifi, WifiOff } from "lucide-react";
 import { pendingCount, setOnline, useShiftLog } from "@/lib/shift-log";
 
 export function AppShell({ children, title }: { children: ReactNode; title?: string }) {
@@ -17,6 +17,13 @@ export function AppShell({ children, title }: { children: ReactNode; title?: str
           ) : null}
         </Link>
         <div className="flex items-center gap-2">
+          <Link
+            to="/console"
+            aria-label="Open operations console"
+            className="flex size-11 items-center justify-center rounded-xl border border-border bg-secondary text-secondary-foreground"
+          >
+            <Monitor className="size-5" />
+          </Link>
           {pending > 0 ? (
             <span className="flex items-center gap-1 rounded-full bg-warning/20 px-3 py-1.5 text-xs font-bold text-warning">
               {state.online ? <CloudUpload className="size-4" /> : <CloudOff className="size-4" />}

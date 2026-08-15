@@ -10,13 +10,26 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ConsoleRouteRouteImport } from './routes/console/route'
 import { Route as EndShiftRouteImport } from './routes/end-shift'
 import { Route as ReportRouteImport } from './routes/report'
 import { Route as TimelineRouteImport } from './routes/timeline'
+import { Route as ConsoleIndexRouteImport } from './routes/console/index'
+import { Route as ConsoleDataRouteImport } from './routes/console/data'
+import { Route as ConsoleEventsRouteImport } from './routes/console/events'
+import { Route as ConsoleIntegrationsRouteImport } from './routes/console/integrations'
+import { Route as ConsoleRcaRouteImport } from './routes/console/rca'
+import { Route as ConsoleShiftsRouteImport } from './routes/console/shifts'
+import { Route as ConsoleTeamsRouteImport } from './routes/console/teams'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConsoleRouteRoute = ConsoleRouteRouteImport.update({
+  id: '/console',
+  path: '/console',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EndShiftRoute = EndShiftRouteImport.update({
@@ -34,36 +47,131 @@ const TimelineRoute = TimelineRouteImport.update({
   path: '/timeline',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConsoleIndexRoute = ConsoleIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
+const ConsoleDataRoute = ConsoleDataRouteImport.update({
+  id: '/data',
+  path: '/data',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
+const ConsoleEventsRoute = ConsoleEventsRouteImport.update({
+  id: '/events',
+  path: '/events',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
+const ConsoleIntegrationsRoute = ConsoleIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
+const ConsoleRcaRoute = ConsoleRcaRouteImport.update({
+  id: '/rca',
+  path: '/rca',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
+const ConsoleShiftsRoute = ConsoleShiftsRouteImport.update({
+  id: '/shifts',
+  path: '/shifts',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
+const ConsoleTeamsRoute = ConsoleTeamsRouteImport.update({
+  id: '/teams',
+  path: '/teams',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/console': typeof ConsoleRouteRouteWithChildren
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/data': typeof ConsoleDataRoute
+  '/console/events': typeof ConsoleEventsRoute
+  '/console/integrations': typeof ConsoleIntegrationsRoute
+  '/console/rca': typeof ConsoleRcaRoute
+  '/console/shifts': typeof ConsoleShiftsRoute
+  '/console/teams': typeof ConsoleTeamsRoute
+  '/console/': typeof ConsoleIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/data': typeof ConsoleDataRoute
+  '/console/events': typeof ConsoleEventsRoute
+  '/console/integrations': typeof ConsoleIntegrationsRoute
+  '/console/rca': typeof ConsoleRcaRoute
+  '/console/shifts': typeof ConsoleShiftsRoute
+  '/console/teams': typeof ConsoleTeamsRoute
+  '/console': typeof ConsoleIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/console': typeof ConsoleRouteRouteWithChildren
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/data': typeof ConsoleDataRoute
+  '/console/events': typeof ConsoleEventsRoute
+  '/console/integrations': typeof ConsoleIntegrationsRoute
+  '/console/rca': typeof ConsoleRcaRoute
+  '/console/shifts': typeof ConsoleShiftsRoute
+  '/console/teams': typeof ConsoleTeamsRoute
+  '/console/': typeof ConsoleIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/end-shift' | '/report' | '/timeline'
+  fullPaths:
+    | '/'
+    | '/console'
+    | '/end-shift'
+    | '/report'
+    | '/timeline'
+    | '/console/data'
+    | '/console/events'
+    | '/console/integrations'
+    | '/console/rca'
+    | '/console/shifts'
+    | '/console/teams'
+    | '/console/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/end-shift' | '/report' | '/timeline'
-  id: '__root__' | '/' | '/end-shift' | '/report' | '/timeline'
+  to:
+    | '/'
+    | '/end-shift'
+    | '/report'
+    | '/timeline'
+    | '/console/data'
+    | '/console/events'
+    | '/console/integrations'
+    | '/console/rca'
+    | '/console/shifts'
+    | '/console/teams'
+    | '/console'
+  id:
+    | '__root__'
+    | '/'
+    | '/console'
+    | '/end-shift'
+    | '/report'
+    | '/timeline'
+    | '/console/data'
+    | '/console/events'
+    | '/console/integrations'
+    | '/console/rca'
+    | '/console/shifts'
+    | '/console/teams'
+    | '/console/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ConsoleRouteRoute: typeof ConsoleRouteRouteWithChildren
   EndShiftRoute: typeof EndShiftRoute
   ReportRoute: typeof ReportRoute
   TimelineRoute: typeof TimelineRoute
@@ -76,6 +184,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/console': {
+      id: '/console'
+      path: '/console'
+      fullPath: '/console'
+      preLoaderRoute: typeof ConsoleRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/end-shift': {
@@ -99,11 +214,85 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TimelineRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/console/': {
+      id: '/console/'
+      path: '/'
+      fullPath: '/console/'
+      preLoaderRoute: typeof ConsoleIndexRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
+    '/console/data': {
+      id: '/console/data'
+      path: '/data'
+      fullPath: '/console/data'
+      preLoaderRoute: typeof ConsoleDataRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
+    '/console/events': {
+      id: '/console/events'
+      path: '/events'
+      fullPath: '/console/events'
+      preLoaderRoute: typeof ConsoleEventsRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
+    '/console/integrations': {
+      id: '/console/integrations'
+      path: '/integrations'
+      fullPath: '/console/integrations'
+      preLoaderRoute: typeof ConsoleIntegrationsRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
+    '/console/rca': {
+      id: '/console/rca'
+      path: '/rca'
+      fullPath: '/console/rca'
+      preLoaderRoute: typeof ConsoleRcaRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
+    '/console/shifts': {
+      id: '/console/shifts'
+      path: '/shifts'
+      fullPath: '/console/shifts'
+      preLoaderRoute: typeof ConsoleShiftsRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
+    '/console/teams': {
+      id: '/console/teams'
+      path: '/teams'
+      fullPath: '/console/teams'
+      preLoaderRoute: typeof ConsoleTeamsRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
   }
 }
 
+interface ConsoleRouteRouteChildren {
+  ConsoleDataRoute: typeof ConsoleDataRoute
+  ConsoleEventsRoute: typeof ConsoleEventsRoute
+  ConsoleIntegrationsRoute: typeof ConsoleIntegrationsRoute
+  ConsoleRcaRoute: typeof ConsoleRcaRoute
+  ConsoleShiftsRoute: typeof ConsoleShiftsRoute
+  ConsoleTeamsRoute: typeof ConsoleTeamsRoute
+  ConsoleIndexRoute: typeof ConsoleIndexRoute
+}
+
+const ConsoleRouteRouteChildren: ConsoleRouteRouteChildren = {
+  ConsoleDataRoute: ConsoleDataRoute,
+  ConsoleEventsRoute: ConsoleEventsRoute,
+  ConsoleIntegrationsRoute: ConsoleIntegrationsRoute,
+  ConsoleRcaRoute: ConsoleRcaRoute,
+  ConsoleShiftsRoute: ConsoleShiftsRoute,
+  ConsoleTeamsRoute: ConsoleTeamsRoute,
+  ConsoleIndexRoute: ConsoleIndexRoute,
+}
+
+const ConsoleRouteRouteWithChildren = ConsoleRouteRoute._addFileChildren(
+  ConsoleRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ConsoleRouteRoute: ConsoleRouteRouteWithChildren,
   EndShiftRoute: EndShiftRoute,
   ReportRoute: ReportRoute,
   TimelineRoute: TimelineRoute,
