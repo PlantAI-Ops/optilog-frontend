@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Loader2, Pencil, Save, Sparkles, Check } from "lucide-react";
+import { ChevronDown, Loader2, Pencil, Plus, Save, Sparkles, Check } from "lucide-react";
 import { ConsoleShell, SourceBadge, StatCard } from "@/components/console/ConsoleShell";
 import { SOURCE_LABEL, STATUS_LABEL } from "@/lib/ops-model";
-import { useShiftLog } from "@/lib/shift-log";
+import { hasMinRole, useShiftLog } from "@/lib/shift-log";
 import {
   useApproveRCA,
   useCreateRCA,
+  useCreateRCAFromEvent,
+  useEvents,
   useIncidentEvents,
   useIncidentRCA,
   useIncidents,
@@ -40,6 +42,8 @@ function RcaPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Partial<RCARow>>({});
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const incidents = useIncidents(plantId, "open,in_progress,under_review");
   const currentId = selectedId ?? incidents.data?.[0]?.id;
@@ -50,9 +54,13 @@ function RcaPage() {
   const createRCA = useCreateRCA();
   const updateRCA = useUpdateRCA();
   const approveRCA = useApproveRCA();
+  const createRCAFromEvent = useCreateRCAFromEvent();
+  const breakdownEvents = useEvents(plantId, new Date().toISOString().slice(0, 10), { type: "breakdown" });
 
   const hasRCA = !!rca.data;
   const isDraft = rca.data?.status === "draft";
+  const canCreateRCA = hasMinRole(user?.role ?? "operator", "supervisor");
+  const unlinkedBreakdowns = breakdownEvents.data?.filter((e) => !e.incident_id) ?? [];
 
   if (!plantId) {
     return (
@@ -118,8 +126,61 @@ function RcaPage() {
     <ConsoleShell title="Root cause analysis" subtitle="Incidents as first-class investigations">
       <div className="grid gap-6 xl:grid-cols-[300px_1fr]">
         <section className="rounded-xl border border-border bg-card">
-          <header className="border-b border-border px-4 py-3 text-sm font-semibold">
+          <header className="flex items-center justify-between border-b border-border px-4 py-3 text-sm font-semibold">
             Incidents
+            {canCreateRCA ? (
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setDropdownOpen((o) => !o)}
+                  className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-secondary/60"
+                >
+                  <Plus className="size-3" />
+                  Create RCA
+                  <ChevronDown className={`size-3 transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
+                </button>
+                {dropdownOpen ? (
+                  <div className="absolute right-0 top-full z-10 mt-1 w-72 rounded-xl border border-border bg-card shadow-lg">
+                    <div className="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+                      Select a breakdown event
+                    </div>
+                    <ul className="max-h-60 overflow-y-auto">
+                      {unlinkedBreakdowns.length === 0 ? (
+                        <li className="px-3 py-4 text-center text-xs text-muted-foreground">
+                          No unlinked breakdown events.
+                        </li>
+                      ) : (
+                        unlinkedBreakdowns.map((e) => (
+                          <li key={e.id}>
+                            <button
+                              type="button"
+                              disabled={createRCAFromEvent.isPending}
+                              onClick={() => {
+                                createRCAFromEvent.mutate(
+                                  { eventId: e.id },
+                                  {
+                                    onSuccess: () => {
+                                      setDropdownOpen(false);
+                                      incidents.refetch();
+                                    },
+                                  },
+                                );
+                              }}
+                              className="w-full px-3 py-2 text-left hover:bg-secondary/60 disabled:opacity-60"
+                            >
+                              <p className="text-xs font-medium">{e.description}</p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                {e.line_name} · {e.timestamp.slice(11, 16)} · {SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}
+                              </p>
+                            </button>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </header>
           <ul className="divide-y divide-border/60">
             {incidents.data?.map((i) => (
