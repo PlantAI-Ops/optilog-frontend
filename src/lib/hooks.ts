@@ -195,13 +195,13 @@ export function useIncidents(plantId: string | undefined, status?: string) {
   });
 }
 
-export function useCreateIncident() {
+export function useCreateRCAFromEvent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ plantId, data }: { plantId: string; data: { event_id: string; title: string } }) =>
-      api.post<IncidentRow>(`/plants/${plantId}/incidents`, data),
-    onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: ["dashboard", vars.plantId, "incidents"] });
+    mutationFn: ({ eventId }: { eventId: string }) =>
+      api.post<RCARow>(`/rca/events/${eventId}/rca`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard", "incidents"] });
     },
   });
 }

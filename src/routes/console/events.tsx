@@ -4,7 +4,7 @@ import { Loader2, ShieldPlus } from "lucide-react";
 import { ConsoleShell, SourceBadge } from "@/components/console/ConsoleShell";
 import { SOURCE_LABEL, STATUS_LABEL } from "@/lib/ops-model";
 import { hasMinRole, useShiftLog } from "@/lib/shift-log";
-import { useCreateIncident, useEvents } from "@/lib/hooks";
+import { useCreateRCAFromEvent, useEvents } from "@/lib/hooks";
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -42,7 +42,7 @@ function EventsPage() {
   const [openId, setOpenId] = useState<string | null>(null);
 
   const events = useEvents(plantId, todayStr(), { type, source });
-  const createIncident = useCreateIncident();
+  const createRCAFromEvent = useCreateRCAFromEvent();
   const canCreateRCA = hasMinRole(user?.role ?? "operator", "supervisor");
 
   if (!plantId) {
@@ -140,11 +140,10 @@ function EventsPage() {
                         <div className="mt-4 border-t border-border/60 pt-3">
                           <button
                             type="button"
-                            disabled={createIncident.isPending}
+                            disabled={createRCAFromEvent.isPending}
                             onClick={() => {
-                              if (!plantId) return;
-                              createIncident.mutate(
-                                { plantId, data: { event_id: e.id, title: e.description } },
+                              createRCAFromEvent.mutate(
+                                { eventId: e.id },
                                 {
                                   onSuccess: () =>
                                     navigate({ to: "/console/rca" }),
@@ -153,7 +152,7 @@ function EventsPage() {
                             }}
                             className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60"
                           >
-                            {createIncident.isPending ? (
+                            {createRCAFromEvent.isPending ? (
                               <Loader2 className="size-3 animate-spin" />
                             ) : (
                               <ShieldPlus className="size-3" />
