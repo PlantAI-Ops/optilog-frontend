@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, Check, Mic, Pencil, Plus, Square } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Mic, Pencil, Plus, Square } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { EventEditor } from "@/components/shift/EventEditor";
 import {
   addEvent,
   blankEvent,
   login,
-  startShift,
+  setState,
   structureRecording,
   unresolvedCount,
   useShiftLog,
@@ -43,8 +43,17 @@ function Index() {
 /* ------------------------------- login -------------------------------- */
 
 function LoginScreen() {
-  const [name, setName] = useState("A. Mensah");
+  const state = useShiftLog();
+  const [email, setEmail] = useState("admin@optilog.com");
   const [password, setPassword] = useState("demo1234");
+
+  const handleSubmit = async () => {
+    try {
+      await login(email, password);
+    } catch {
+      // error is set in state by login()
+    }
+  };
 
   return (
     <AppShell>
@@ -55,13 +64,18 @@ function LoginScreen() {
             Your session stays active across shifts.
           </p>
         </div>
+        {state.error ? (
+          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive">
+            {state.error}
+          </div>
+        ) : null}
         <label className="block">
           <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            Username
+            Email
           </span>
           <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             className="mt-1 h-14 w-full rounded-2xl border border-input bg-secondary px-4 text-lg outline-none focus:border-ring"
           />
         </label>
@@ -76,20 +90,15 @@ function LoginScreen() {
             className="mt-1 h-14 w-full rounded-2xl border border-input bg-secondary px-4 text-lg outline-none focus:border-ring"
           />
         </label>
-        <div className="space-y-3 pt-2">
+        <div className="pt-2">
           <button
             type="button"
-            onClick={() => login(name || "Operator", "operator")}
-            className="h-16 w-full rounded-2xl bg-primary text-lg font-black text-primary-foreground"
+            onClick={handleSubmit}
+            disabled={state.loading}
+            className="flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-lg font-black text-primary-foreground disabled:opacity-60"
           >
-            Sign in as operator
-          </button>
-          <button
-            type="button"
-            onClick={() => login(name || "Supervisor", "supervisor")}
-            className="h-16 w-full rounded-2xl border border-border bg-secondary text-lg font-bold text-secondary-foreground"
-          >
-            Sign in as supervisor
+            {state.loading ? <Loader2 className="size-5 animate-spin" /> : null}
+            Sign in
           </button>
         </div>
       </div>
@@ -103,6 +112,10 @@ function StartShiftScreen() {
   const state = useShiftLog();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
+  const handleStart = () => {
+    setState({ shiftActive: true });
+  };
 
   return (
     <AppShell>
@@ -122,29 +135,36 @@ function StartShiftScreen() {
             </div>
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Role</dt>
-              <dd className="font-bold capitalize">{state.user?.role}</dd>
+              <dd className="font-bold capitalize">{state.user?.role?.replace(/_/g, " ")}</dd>
             </div>
           </dl>
-          <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4">
-            <p className="flex items-center gap-2 text-base font-bold text-warning">
-              <AlertTriangle className="size-5" />
-              Previous shift: {state.carriedOver.length} unresolved issues
-            </p>
-            <ul className="mt-3 space-y-2 text-base text-foreground">
-              {state.carriedOver.map((issue) => (
-                <li key={issue} className="leading-snug">
-                  • {issue}
-                </li>
-              ))}
-            </ul>
-          </div>
+          {state.error ? (
+            <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive">
+              {state.error}
+            </div>
+          ) : null}
+          {state.carriedOver.length > 0 ? (
+            <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4">
+              <p className="flex items-center gap-2 text-base font-bold text-warning">
+                <AlertTriangle className="size-5" />
+                Previous shift: {state.carriedOver.length} unresolved issues
+              </p>
+              <ul className="mt-3 space-y-2 text-base text-foreground">
+                {state.carriedOver.map((issue) => (
+                  <li key={issue} className="leading-snug">
+                    • {issue}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
         <button
           type="button"
-          onClick={startShift}
-          className="h-20 w-full rounded-3xl bg-primary text-2xl font-black text-primary-foreground"
+          onClick={handleStart}
+          className="flex h-20 w-full items-center justify-center gap-3 rounded-3xl bg-primary text-2xl font-black text-primary-foreground"
         >
-          Start Shift
+          Start Logging
         </button>
       </div>
     </AppShell>
@@ -278,7 +298,14 @@ function RecordScreen() {
             <p className="text-2xl font-black leading-tight">
               {draft.asset} — {draft.event_type}
             </p>
-            <CardLine label="Time" value={new Date(draft.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })} />
+            <CardLine
+              label="Time"
+              value={new Date(draft.timestamp).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              })}
+            />
             {draft.subsystem ? <CardLine label="Subsystem" value={draft.subsystem} /> : null}
             {draft.duration_minutes !== null ? (
               <CardLine label="Duration" value={`~${draft.duration_minutes} minutes`} />
@@ -290,7 +317,9 @@ function RecordScreen() {
             {draft.verified_cause ? (
               <CardLine label="Verified cause" value={draft.verified_cause} />
             ) : null}
-            {draft.action_taken ? <CardLine label="Action taken" value={draft.action_taken} /> : null}
+            {draft.action_taken ? (
+              <CardLine label="Action taken" value={draft.action_taken} />
+            ) : null}
           </div>
           <div className="mt-auto space-y-3">
             <button
@@ -404,7 +433,9 @@ function RecordScreen() {
 function Stat({ value, label, warn }: { value: number; label: string; warn?: boolean }) {
   return (
     <div className="rounded-2xl border border-border bg-card px-4 py-3">
-      <p className={`text-4xl font-black ${warn && value > 0 ? "text-warning" : "text-foreground"}`}>
+      <p
+        className={`text-4xl font-black ${warn && value > 0 ? "text-warning" : "text-foreground"}`}
+      >
         {value}
       </p>
       <p className="text-sm font-medium text-muted-foreground">{label}</p>
