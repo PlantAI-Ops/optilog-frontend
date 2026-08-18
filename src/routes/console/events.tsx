@@ -183,16 +183,34 @@ function Filter({
             key={v}
             type="button"
             onClick={() => onChange(v)}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
               v === value
                 ? "border-primary bg-primary text-primary-foreground"
                 : "border-border text-muted-foreground hover:bg-secondary/60"
             }`}
           >
-            {v}
+            {filterLabel(v)}
           </button>
         ))}
       </div>
     </div>
   );
+}
+
+function filterLabel(v: string): string {
+  if (v === "all") return "All";
+  const labels: Record<string, string> = {
+    operator: "Operator",
+    supervisor: "Supervisor",
+    mes: "MES",
+    scada: "SCADA",
+    cmms: "CMMS",
+    erp: "ERP",
+    downtime: "Downtime",
+    quality: "Quality",
+    maintenance: "Maintenance",
+    safety: "Safety",
+    observation: "Observation",
+  };
+  return labels[v] ?? v;
 }
