@@ -179,3 +179,25 @@ if (opts?.type && opts.type !== "all") params.set("type", opts.type);
 **Gotcha:**
 - Changing `useEvents` signature required updating the dashboard call from `useEvents(plantId, today, 5)` to `useEvents(plantId, today, { limit: 5 })`
 - `as keyof typeof` cast needed because API returns `string`, not the union type from `ops-model.ts`
+
+---
+
+## 2026-08-18: RCA page wired to live backend
+
+**Context:** Connected the root cause analysis page (`/console/rca`) to live data.
+
+**Decisions:**
+- Expanded `IncidentRow` type with full detail fields: `shift_id`, `date`, `problem`, `observed_condition`, `root_cause`, `five_why[]`, `corrective_action`, `preventive_action`, `timeline[]`, `evidence[]`, `event_ids[]`, `ai_insight`
+- Added `useIncidentEvents(plantId, incidentId)` hook — new endpoint: `GET /plants/{id}/incidents/{incidentId}/events`
+- Auto-selects first incident in list on load (no need to click first)
+- Linked events section has its own loading state via `useIncidentEvents`
+- Shift display uses a simple fallback (`Shift {id}`) since we don't have shift data readily available in the incident response
+
+**Pattern: Auto-select first item**
+```ts
+const selectedId = id ?? incidents.data?.[0]?.id;
+```
+
+**Gotcha:**
+- `timeline` and `evidence` items have `source` as `string` — need `as keyof typeof SOURCE_LABEL` cast for the badge display
+- The `five_why` array may have empty question/answer pairs — always show fallback text

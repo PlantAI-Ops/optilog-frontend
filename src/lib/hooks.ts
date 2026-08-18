@@ -77,10 +77,22 @@ export interface IncidentRow {
   title: string;
   line_id: string;
   line_name: string;
+  shift_id: string;
+  date: string;
   duration_minutes: number;
   status: string;
   owner: string;
   due_date: string;
+  problem: string;
+  observed_condition: string;
+  root_cause: string;
+  five_why: { question: string; answer: string }[];
+  corrective_action: string;
+  preventive_action: string;
+  timeline: { time: string; label: string; source: string }[];
+  evidence: { label: string; source: string }[];
+  event_ids: string[];
+  ai_insight: string;
 }
 
 export interface AssetRollupRow {
@@ -172,6 +184,15 @@ export function useIncidents(plantId: string | undefined, status?: string) {
     queryKey: ["dashboard", plantId, "incidents", status],
     queryFn: () => api.get<IncidentRow[]>(`/plants/${plantId}/incidents${params}`),
     enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
+}
+
+export function useIncidentEvents(plantId: string | undefined, incidentId: string | undefined) {
+  return useQuery({
+    queryKey: ["dashboard", plantId, "incident-events", incidentId],
+    queryFn: () => api.get<EventRow[]>(`/plants/${plantId}/incidents/${incidentId}/events`),
+    enabled: !!plantId && !!incidentId,
     staleTime: STALE_TIME,
   });
 }
