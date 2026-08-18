@@ -201,3 +201,34 @@ const selectedId = id ?? incidents.data?.[0]?.id;
 **Gotcha:**
 - `timeline` and `evidence` items have `source` as `string` — need `as keyof typeof SOURCE_LABEL` cast for the badge display
 - The `five_why` array may have empty question/answer pairs — always show fallback text
+
+---
+
+## 2026-08-18: RCA fully separated from incidents
+
+**Context:** RCA is now a separate entity with its own CRUD + approve endpoints, not embedded fields in the incident.
+
+**Decisions:**
+- Shrunk `IncidentRow` — removed all embedded RCA fields (problem, five_why, corrective_action, etc.)
+- Added `RCARow` type with full investigation fields + status + timestamps
+- Added 4 mutation/query hooks: `useIncidentRCA`, `useCreateRCA`, `useUpdateRCA`, `useApproveRCA`
+- Mutations use `useQueryClient` to invalidate the RCA query on success
+- RCA page shows "Start Investigation" when no RCA exists, editable fields + save/approve when it does
+- Editing mode uses local `form` state — only submits on save, not real-time
+
+**Pattern: Mutation with cache invalidation**
+```ts
+export function useCreateRCA() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ incidentId, data }) => api.post(`/incidents/${incidentId}/rca`, data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["rca", vars.incidentId] });
+    },
+  });
+}
+```
+
+**Gotcha:**
+- `useCreateRCA` needs the `incidentId` in the mutation variables — use `onSuccess: (_res, vars)` where `vars` is the mutation input
+- RCA status flow: `draft` → (edit) → `completed` → `approve` → `approved`

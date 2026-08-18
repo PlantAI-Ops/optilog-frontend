@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 
 /* -------------------------------------------------------------------------- */
@@ -83,6 +83,11 @@ export interface IncidentRow {
   status: string;
   owner: string;
   due_date: string;
+}
+
+export interface RCARow {
+  id: string;
+  incident_id: string;
   problem: string;
   observed_condition: string;
   root_cause: string;
@@ -91,8 +96,10 @@ export interface IncidentRow {
   preventive_action: string;
   timeline: { time: string; label: string; source: string }[];
   evidence: { label: string; source: string }[];
-  event_ids: string[];
   ai_insight: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AssetRollupRow {
@@ -194,6 +201,47 @@ export function useIncidentEvents(plantId: string | undefined, incidentId: strin
     queryFn: () => api.get<EventRow[]>(`/plants/${plantId}/incidents/${incidentId}/events`),
     enabled: !!plantId && !!incidentId,
     staleTime: STALE_TIME,
+  });
+}
+
+export function useIncidentRCA(incidentId: string | undefined) {
+  return useQuery({
+    queryKey: ["rca", incidentId],
+    queryFn: () => api.get<RCARow>(`/incidents/${incidentId}/rca`),
+    enabled: !!incidentId,
+    staleTime: STALE_TIME,
+  });
+}
+
+export function useCreateRCA() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ incidentId, data }: { incidentId: string; data: Partial<RCARow> }) =>
+      api.post<RCARow>(`/incidents/${incidentId}/rca`, data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["rca", vars.incidentId] });
+    },
+  });
+}
+
+export function useUpdateRCA() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rcaId, data }: { rcaId: string; data: Partial<RCARow> }) =>
+      api.patch<RCARow>(`/rca/${rcaId}`, data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["rca", vars.rcaId] });
+    },
+  });
+}
+
+export function useApproveRCA() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rcaId: string) => api.post<RCARow>(`/rca/${rcaId}/approve`),
+    onSuccess: (_res, rcaId) => {
+      qc.invalidateQueries({ queryKey: ["rca", rcaId] });
+    },
   });
 }
 
