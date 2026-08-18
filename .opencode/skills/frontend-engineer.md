@@ -86,8 +86,10 @@ For every frontend task, follow this sequence:
 - If build fails, fix errors before proceeding
 
 ### 5. Commit
-- Use conventional commit format (see below)
-- Only commit when explicitly asked
+- After every successful task (build passes), commit immediately with conventional commit format
+- Use the git bundled with GitHub Desktop: `"C:\Users\MY PC\AppData\Local\GitHubDesktop\app-3.6.4\resources\app\git\cmd\git.exe"`
+- Stage only the files related to the task
+- Commit message follows conventional commit format (see below)
 
 ---
 
@@ -228,7 +230,7 @@ Dev proxy: `/api` → `http://localhost:8000` (configured in `vite.config.ts`)
 After completing each task:
 
 1. **Verify** — Run `npm run build` and confirm it passes
-2. **Commit** — Use conventional commit format
+2. **Commit** — Stage relevant files and commit with conventional commit format (see workflow step 5)
 3. **Learn** — Update `.opencode/skills/learnings.md` with:
    - Any new patterns discovered
    - Decisions made and why
