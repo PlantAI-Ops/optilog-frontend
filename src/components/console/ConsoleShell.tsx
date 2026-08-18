@@ -5,12 +5,14 @@ import {
   CalendarClock,
   Database,
   Gauge,
+  LogOut,
   Plug,
   Search,
   Smartphone,
   Users,
 } from "lucide-react";
 import { plant } from "@/lib/ops-model";
+import { logout } from "@/lib/shift-log";
 
 const NAV = [
   { to: "/console", label: "Dashboard", icon: Gauge, exact: true },
@@ -75,6 +77,13 @@ export function ConsoleShell({
               <span className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1">
                 <span className="size-2 rounded-full bg-success" /> Data layer live
               </span>
+              <button
+                type="button"
+                onClick={() => { logout(); window.location.href = "/"; }}
+                className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1 hover:bg-secondary/60"
+              >
+                <LogOut className="size-3" /> Sign out
+              </button>
             </div>
           </div>
           <nav className="mt-3 flex gap-1 overflow-x-auto lg:hidden">
