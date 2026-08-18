@@ -23,7 +23,8 @@ export type EventType =
   | "maintenance"
   | "safety"
   | "observation"
-  | "production";
+  | "production"
+  | "breakdown";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 export type OpsStatus = "open" | "in_progress" | "resolved" | "under_review";

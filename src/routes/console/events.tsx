@@ -1,16 +1,16 @@
 import { Fragment, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Loader2, ShieldPlus } from "lucide-react";
 import { ConsoleShell, SourceBadge } from "@/components/console/ConsoleShell";
 import { SOURCE_LABEL, STATUS_LABEL } from "@/lib/ops-model";
-import { useShiftLog } from "@/lib/shift-log";
-import { useEvents } from "@/lib/hooks";
+import { hasMinRole, useShiftLog } from "@/lib/shift-log";
+import { useCreateIncident, useEvents } from "@/lib/hooks";
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-const TYPES = ["all", "downtime", "quality", "maintenance", "safety", "observation"] as const;
+const TYPES = ["all", "downtime", "breakdown", "quality", "maintenance", "safety", "observation"] as const;
 const SOURCES = ["all", "operator", "supervisor", "mes", "scada", "cmms", "erp"] as const;
 
 export const Route = createFileRoute("/console/events")({
@@ -35,12 +35,15 @@ export const Route = createFileRoute("/console/events")({
 function EventsPage() {
   const user = useShiftLog().user;
   const plantId = user?.plant_ids?.[0];
+  const navigate = useNavigate();
 
   const [type, setType] = useState<string>("all");
   const [source, setSource] = useState<string>("all");
   const [openId, setOpenId] = useState<string | null>(null);
 
   const events = useEvents(plantId, todayStr(), { type, source });
+  const createIncident = useCreateIncident();
+  const canCreateRCA = hasMinRole(user?.role ?? "operator", "supervisor");
 
   if (!plantId) {
     return (
@@ -133,6 +136,32 @@ function EventsPage() {
                           <Row k="Incident" v={e.incident_id ?? ""} />
                         </dl>
                       </div>
+                      {e.event_type === "breakdown" && canCreateRCA && !e.incident_id ? (
+                        <div className="mt-4 border-t border-border/60 pt-3">
+                          <button
+                            type="button"
+                            disabled={createIncident.isPending}
+                            onClick={() => {
+                              if (!plantId) return;
+                              createIncident.mutate(
+                                { plantId, data: { event_id: e.id, title: e.description } },
+                                {
+                                  onSuccess: () =>
+                                    navigate({ to: "/console/rca" }),
+                                },
+                              );
+                            }}
+                            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+                          >
+                            {createIncident.isPending ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : (
+                              <ShieldPlus className="size-3" />
+                            )}
+                            Create RCA
+                          </button>
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 ) : null}
@@ -207,6 +236,7 @@ function filterLabel(v: string): string {
     cmms: "CMMS",
     erp: "ERP",
     downtime: "Downtime",
+    breakdown: "Breakdown",
     quality: "Quality",
     maintenance: "Maintenance",
     safety: "Safety",

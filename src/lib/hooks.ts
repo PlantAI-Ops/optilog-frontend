@@ -195,6 +195,17 @@ export function useIncidents(plantId: string | undefined, status?: string) {
   });
 }
 
+export function useCreateIncident() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ plantId, data }: { plantId: string; data: { event_id: string; title: string } }) =>
+      api.post<IncidentRow>(`/plants/${plantId}/incidents`, data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["dashboard", vars.plantId, "incidents"] });
+    },
+  });
+}
+
 export function useIncidentEvents(plantId: string | undefined, incidentId: string | undefined) {
   return useQuery({
     queryKey: ["dashboard", plantId, "incident-events", incidentId],
