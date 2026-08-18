@@ -132,3 +132,26 @@ const PRESETS = [
 
 **Gotcha:**
 - `.opencode/*` is in `.gitignore` — had to add `!.opencode/skills/` exception to track skill files
+
+---
+
+## 2026-08-18: Teams page wired to live backend
+
+**Context:** Connected the teams performance page (`/console/teams`) to live data with date filtering.
+
+**Decisions:**
+- Reused 4 existing hooks: `useTeams`, `useTeamsSummary`, `useShifts`, `useAssetRollup`
+- Client-side filtering of shifts by `team_id` — no new backend endpoint needed
+- Built a `summaryMap` (Map keyed by `team_id`) from `useTeamsSummary` response for O(1) lookups per team card
+- Added same date filter pattern as shifts page (presets + date input)
+- `ShiftRow` already includes `achievement`, `team_name`, `line_name` — no computed fields needed
+
+**Pattern: Map for O(1) lookup**
+```ts
+const summaryMap = new Map(teamsSummary.data?.map((t) => [t.team_id, t]) ?? []);
+// Then per team: summaryMap.get(team.id)
+```
+
+**Gotcha:**
+- `useShifts` returns all shifts — must filter by `s.team_id === team.id` for each card
+- `achievement` is pre-computed in `ShiftRow` from the backend — no need to recalculate
