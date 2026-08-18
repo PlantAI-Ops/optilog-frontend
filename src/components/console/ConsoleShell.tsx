@@ -26,10 +26,12 @@ export function ConsoleShell({
   children,
   title,
   subtitle,
+  plantName,
 }: {
   children: ReactNode;
   title: string;
   subtitle?: string;
+  plantName?: string;
 }) {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -69,7 +71,7 @@ export function ConsoleShell({
               {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="rounded-full border border-border px-3 py-1">{plant.name}</span>
+              <span className="rounded-full border border-border px-3 py-1">{plantName ?? plant.name}</span>
               <span className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1">
                 <span className="size-2 rounded-full bg-success" /> Data layer live
               </span>
