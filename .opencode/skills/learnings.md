@@ -155,3 +155,27 @@ const summaryMap = new Map(teamsSummary.data?.map((t) => [t.team_id, t]) ?? []);
 **Gotcha:**
 - `useShifts` returns all shifts — must filter by `s.team_id === team.id` for each card
 - `achievement` is pre-computed in `ShiftRow` from the backend — no need to recalculate
+
+---
+
+## 2026-08-18: Events page wired to live backend
+
+**Context:** Connected the events stream page (`/console/events`) to live data with type/source filters.
+
+**Decisions:**
+- Expanded `EventRow` type with full detail fields: `observation`, `reported_cause`, `verified_cause`, `action`, `source_record_id`, `evidence[]`, `incident_id`, `asset_name`
+- Added `type` and `source` filter params to `useEvents` hook using `URLSearchParams`
+- Changed `useEvents` third arg from `limit?: number` to `opts?: { limit?, type?, source? }` — updated dashboard call accordingly
+- Used `SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source` cast for API strings vs union types
+- Server-side filtering — backend filters by type/source, not client-side
+
+**Pattern: URLSearchParams for clean query building**
+```ts
+const params = new URLSearchParams({ date });
+if (opts?.limit) params.set("limit", String(opts.limit));
+if (opts?.type && opts.type !== "all") params.set("type", opts.type);
+```
+
+**Gotcha:**
+- Changing `useEvents` signature required updating the dashboard call from `useEvents(plantId, today, 5)` to `useEvents(plantId, today, { limit: 5 })`
+- `as keyof typeof` cast needed because API returns `string`, not the union type from `ops-model.ts`

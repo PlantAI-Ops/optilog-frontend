@@ -51,6 +51,7 @@ export interface EventRow {
   line_id: string;
   line_name: string;
   asset_id: string;
+  asset_name: string;
   shift_id: string;
   team_id: string;
   team_name: string;
@@ -61,6 +62,13 @@ export interface EventRow {
   status: string;
   source: string;
   duration_seconds: number | null;
+  observation: string;
+  reported_cause: string;
+  verified_cause: string;
+  action: string;
+  source_record_id: string;
+  evidence: string[];
+  incident_id: string | null;
 }
 
 export interface IncidentRow {
@@ -141,11 +149,18 @@ export function useTeamsSummary(plantId: string | undefined, date: string) {
   });
 }
 
-export function useEvents(plantId: string | undefined, date: string, limit?: number) {
-  const params = limit ? `?date=${date}&limit=${limit}` : `?date=${date}`;
+export function useEvents(
+  plantId: string | undefined,
+  date: string,
+  opts?: { limit?: number; type?: string; source?: string },
+) {
+  const params = new URLSearchParams({ date });
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.type && opts.type !== "all") params.set("type", opts.type);
+  if (opts?.source && opts.source !== "all") params.set("source", opts.source);
   return useQuery({
-    queryKey: ["dashboard", plantId, "events", date, limit],
-    queryFn: () => api.get<EventRow[]>(`/plants/${plantId}/events${params}`),
+    queryKey: ["dashboard", plantId, "events", date, opts?.limit, opts?.type, opts?.source],
+    queryFn: () => api.get<EventRow[]>(`/plants/${plantId}/events?${params.toString()}`),
     enabled: !!plantId,
     staleTime: STALE_TIME,
   });

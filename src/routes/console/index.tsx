@@ -43,7 +43,7 @@ function Dashboard() {
   const summary = usePlantSummary(plantId, today);
   const shifts = useShifts(plantId, today);
   const teamsSummary = useTeamsSummary(plantId, today);
-  const events = useEvents(plantId, today, 5);
+  const events = useEvents(plantId, today, { limit: 5 });
   const incidents = useIncidents(plantId, "open,in_progress,under_review");
   const assetRollup = useAssetRollup(plantId, 30);
 
