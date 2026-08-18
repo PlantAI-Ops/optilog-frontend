@@ -119,3 +119,16 @@ const PRESETS = [
 - `shiftEvents.data?.length` returns `undefined` while loading, not `0` — always check `isLoading` first
 - The existing `EventRow` type from dashboard hooks works for shift events too — no new types needed
 - `STATUS_LABEL[e.status as keyof typeof STATUS_LABEL]` cast needed because API returns `string`, not the union type
+
+---
+
+## 2026-08-18: Skill enforces commit-after-build
+
+**Context:** Updated the frontend engineer skill to make committing a required step after every successful build, not optional.
+
+**Decision:**
+- Changed workflow step 5 from "only commit when explicitly asked" to "commit immediately after build passes"
+- Added git path for GitHub Desktop bundled git: `"C:\Users\MY PC\AppData\Local\GitHubDesktop\app-3.6.4\resources\app\git\cmd\git.exe"`
+
+**Gotcha:**
+- `.opencode/*` is in `.gitignore` — had to add `!.opencode/skills/` exception to track skill files
