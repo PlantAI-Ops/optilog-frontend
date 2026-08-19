@@ -141,12 +141,26 @@ export interface Team {
 
 const STALE_TIME = 30_000;
 
+export interface Plant {
+  id: string;
+  name: string;
+}
+
 export function usePlantSummary(plantId: string | undefined, date: string) {
   return useQuery({
     queryKey: ["dashboard", plantId, "summary", date],
     queryFn: () => api.get<PlantSummary>(`/plants/${plantId}/summary?date=${date}`),
     enabled: !!plantId,
     staleTime: STALE_TIME,
+  });
+}
+
+export function usePlant(plantId: string | undefined) {
+  return useQuery({
+    queryKey: ["plant", plantId],
+    queryFn: () => api.get<Plant>(`/plants/${plantId}`),
+    enabled: !!plantId,
+    staleTime: 300_000,
   });
 }
 
@@ -218,7 +232,7 @@ export function useIncidentEvents(plantId: string | undefined, incidentId: strin
 export function useIncidentRCA(incidentId: string | undefined) {
   return useQuery({
     queryKey: ["rca", incidentId],
-    queryFn: () => api.get<RCARow>(`/incidents/${incidentId}/rca`),
+    queryFn: () => api.get<RCARow>(`/rca/incidents/${incidentId}/rca`),
     enabled: !!incidentId,
     staleTime: STALE_TIME,
   });
@@ -228,7 +242,7 @@ export function useCreateRCA() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ incidentId, data }: { incidentId: string; data: Partial<RCARow> }) =>
-      api.post<RCARow>(`/incidents/${incidentId}/rca`, data),
+      api.post<RCARow>(`/rca/incidents/${incidentId}/rca`, data),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ["rca", vars.incidentId] });
     },

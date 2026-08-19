@@ -10,7 +10,7 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-const TYPES = ["all", "downtime", "breakdown", "quality", "maintenance", "safety", "observation"] as const;
+const TYPES = ["all", "downtime", "breakdown", "quality", "maintenance", "safety", "observation", "environmental"] as const;
 const SOURCES = ["all", "operator", "supervisor", "mes", "scada", "cmms", "erp"] as const;
 
 export const Route = createFileRoute("/console/events")({
@@ -240,6 +240,7 @@ function filterLabel(v: string): string {
     maintenance: "Maintenance",
     safety: "Safety",
     observation: "Observation",
+    environmental: "Environmental",
   };
   return labels[v] ?? v;
 }

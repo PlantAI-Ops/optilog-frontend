@@ -11,8 +11,8 @@ import {
   Smartphone,
   Users,
 } from "lucide-react";
-import { plant } from "@/lib/ops-model";
-import { logout } from "@/lib/shift-log";
+import { usePlant } from "@/lib/hooks";
+import { logout, useShiftLog } from "@/lib/shift-log";
 
 const NAV = [
   { to: "/console", label: "Dashboard", icon: Gauge, exact: true },
@@ -35,6 +35,10 @@ export function ConsoleShell({
   subtitle?: string;
   plantName?: string;
 }) {
+  const user = useShiftLog().user;
+  const plantId = user?.plant_ids?.[0];
+  const plant = usePlant(plantId);
+  const displayName = plantName ?? plant.data?.name ?? "—";
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-border bg-card px-3 py-4 lg:flex">
@@ -73,7 +77,7 @@ export function ConsoleShell({
               {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="rounded-full border border-border px-3 py-1">{plantName ?? plant.name}</span>
+              <span className="rounded-full border border-border px-3 py-1">{displayName}</span>
               <span className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1">
                 <span className="size-2 rounded-full bg-success" /> Data layer live
               </span>

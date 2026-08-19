@@ -24,7 +24,8 @@ export type EventType =
   | "safety"
   | "observation"
   | "production"
-  | "breakdown";
+  | "breakdown"
+  | "environmental";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 export type OpsStatus = "open" | "in_progress" | "resolved" | "under_review";

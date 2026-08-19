@@ -277,7 +277,7 @@ function RcaPage() {
                           Save
                         </button>
                       ) : null}
-                      {rca.data.status === "completed" || rca.data.status === "draft" ? (
+                      {rca.data.status === "completed" ? (
                         <button
                           type="button"
                           onClick={handleApprove}
