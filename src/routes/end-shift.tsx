@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Mic } from "lucide-react";
+import { Loader2, Mic } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
-import { endShift, unresolvedCount, useShiftLog } from "@/lib/shift-log";
+import { endShift, hasMinRole, unresolvedCount, useShiftLog } from "@/lib/shift-log";
 
 export const Route = createFileRoute("/end-shift")({
   head: () => ({
@@ -10,7 +10,8 @@ export const Route = createFileRoute("/end-shift")({
       { title: "End shift & handover — Shift-Log" },
       {
         name: "description",
-        content: "Close out the shift with a summary of events and a handover note for the next crew.",
+        content:
+          "Close out the shift with a summary of events and a handover note for the next crew.",
       },
       { property: "og:title", content: "End shift & handover — Shift-Log" },
       {
@@ -28,7 +29,16 @@ function EndShiftPage() {
   const [note, setNote] = useState(state.handover);
   const unresolved = unresolvedCount(state);
   const resolved = state.events.filter((e) => e.status === "resolved").length;
-  const isSupervisor = state.user?.role === "supervisor";
+  const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
+
+  const handleEnd = async () => {
+    try {
+      await endShift(note);
+      navigate({ to: "/report" });
+    } catch {
+      // error is set in state by endShift()
+    }
+  };
 
   return (
     <AppShell title="End of shift">
@@ -51,12 +61,20 @@ function EndShiftPage() {
           />
           <button
             type="button"
-            onClick={() => setNote((n) => (n ? n : "Watch the Line 3 motor noise — maintenance is aware."))}
+            onClick={() =>
+              setNote((n) => (n ? n : "Watch the Line 3 motor noise — maintenance is aware."))
+            }
             className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card font-bold"
           >
             <Mic className="size-5" /> Dictate note
           </button>
         </div>
+
+        {state.error ? (
+          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive">
+            {state.error}
+          </div>
+        ) : null}
 
         {!isSupervisor ? (
           <p className="rounded-2xl border border-warning/40 bg-warning/10 p-4 text-base font-medium text-warning">
@@ -67,12 +85,11 @@ function EndShiftPage() {
         <div className="mt-auto space-y-3">
           <button
             type="button"
-            onClick={() => {
-              endShift(note);
-              navigate({ to: "/report" });
-            }}
-            className="h-20 w-full rounded-3xl bg-primary text-xl font-black text-primary-foreground"
+            onClick={handleEnd}
+            disabled={state.loading}
+            className="flex h-20 w-full items-center justify-center gap-3 rounded-3xl bg-primary text-xl font-black text-primary-foreground disabled:opacity-60"
           >
+            {state.loading ? <Loader2 className="size-5 animate-spin" /> : null}
             End Shift
           </button>
           <Link
@@ -97,7 +114,11 @@ function Tile({
   tone?: "success" | "warning";
 }) {
   const color =
-    tone === "success" ? "text-success" : tone === "warning" && value > 0 ? "text-warning" : "text-foreground";
+    tone === "success"
+      ? "text-success"
+      : tone === "warning" && value > 0
+        ? "text-warning"
+        : "text-foreground";
   return (
     <div className="rounded-2xl border border-border bg-card px-3 py-4 text-center">
       <p className={`text-3xl font-black ${color}`}>{value}</p>

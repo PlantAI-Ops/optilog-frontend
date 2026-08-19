@@ -3,7 +3,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, Check, Loader2, Mic, Pencil, Plus, Square } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { EventEditor } from "@/components/shift/EventEditor";
-import { useShiftOptions, useCarriedOver, transcribeAudio } from "@/lib/hooks";
+import { useCurrentShift, useCarriedOver, transcribeAudio } from "@/lib/hooks";
 import { postFormData } from "@/lib/api";
 import {
   addEvent,
@@ -116,30 +116,29 @@ function StartShiftScreen() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
-  const options = useShiftOptions(plantId, today);
-  const shifts = options.data?.shifts ?? [];
-  const lines = options.data?.lines ?? [];
+  const currentShift = useCurrentShift(plantId);
+  const shift = currentShift.data?.current_shift;
+  const lines = currentShift.data?.lines ?? [];
 
-  const [selectedShiftId, setSelectedShiftId] = useState<string>("");
   const [selectedLineId, setSelectedLineId] = useState<string>("");
 
-  const carriedOver = useCarriedOver(plantId, today, selectedShiftId || undefined);
-  const issues = carriedOver.data?.issues ?? [];
+  const carriedOver = useCarriedOver(plantId, shift?.shift_type, today);
+  const issues = carriedOver.data?.open_issues ?? [];
 
-  const selectedShift = shifts.find((s) => s.id === selectedShiftId);
   const selectedLine = lines.find((l) => l.id === selectedLineId);
 
-  const canStart = !!selectedShiftId && !!selectedLineId;
+  const canStart = !!shift && !!selectedLineId;
 
   const handleStart = () => {
     if (!canStart) return;
     setState({
       shiftActive: true,
-      shiftId: selectedShiftId,
-      shiftName: selectedShift?.name ?? "Shift",
+      shiftId: shift.shift_id,
+      shiftName: shift.name,
+      shiftType: shift.shift_type,
       lineId: selectedLineId,
       line: selectedLine?.name ?? "Line",
-      carriedOver: issues,
+      carriedOver: issues.map((i) => `${i.title} (${i.severity})`),
     });
   };
 
@@ -151,33 +150,26 @@ function StartShiftScreen() {
             {greeting}, {state.user?.name}.
           </h1>
 
-          {options.isLoading ? (
+          {currentShift.isLoading ? (
             <div className="flex items-center justify-center rounded-2xl border border-border bg-card py-8">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
-          ) : options.error ? (
+          ) : currentShift.error ? (
             <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive">
-              Failed to load shift options.
+              Failed to load shift info.
             </div>
-          ) : (
+          ) : shift ? (
             <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
-              <label className="block">
-                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Shift
-                </span>
-                <select
-                  value={selectedShiftId}
-                  onChange={(e) => setSelectedShiftId(e.target.value)}
-                  className="mt-1 h-14 w-full rounded-2xl border border-input bg-secondary px-4 text-lg font-bold outline-none focus:border-ring"
-                >
-                  <option value="">Select shift…</option>
-                  {shifts.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.start}–{s.end})
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">Shift</dt>
+                <dd className="font-bold">
+                  {shift.name} ({shift.start}–{shift.end})
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">Team</dt>
+                <dd className="font-bold">{shift.team_name}</dd>
+              </div>
 
               <label className="block">
                 <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -202,7 +194,7 @@ function StartShiftScreen() {
                 <dd className="font-bold capitalize">{state.user?.role?.replace(/_/g, " ")}</dd>
               </div>
             </div>
-          )}
+          ) : null}
 
           {state.error ? (
             <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive">
@@ -218,8 +210,8 @@ function StartShiftScreen() {
               </p>
               <ul className="mt-3 space-y-2 text-base text-foreground">
                 {issues.map((issue) => (
-                  <li key={issue} className="leading-snug">
-                    • {issue}
+                  <li key={issue.id} className="leading-snug">
+                    • {issue.title} — {issue.line_name}
                   </li>
                 ))}
               </ul>

@@ -357,44 +357,69 @@ export function usePlantConnectors(plantId: string | undefined) {
 /*                            mobile shift endpoints                          */
 /* -------------------------------------------------------------------------- */
 
-export interface ShiftOption {
-  id: string;
-  name: string;
-  start: string;
-  end: string;
+export interface CurrentShiftResponse {
+  current_shift: {
+    shift_id: string;
+    shift_type: string;
+    name: string;
+    start: string;
+    end: string;
+    date: string;
+    status: string;
+    team_id: string;
+    team_name: string;
+    line_id: string;
+    line_name: string;
+  };
+  previous_shift: {
+    shift_id: string;
+    shift_type: string;
+    name: string;
+    date: string;
+  } | null;
+  lines: { id: string; name: string }[];
 }
 
-export interface LineOption {
-  id: string;
-  name: string;
-}
-
-export interface ShiftOptions {
-  shifts: ShiftOption[];
-  lines: LineOption[];
-}
-
-export function useShiftOptions(plantId: string | undefined, date: string) {
+export function useCurrentShift(plantId: string | undefined) {
   return useQuery({
-    queryKey: ["shift-options", plantId, date],
-    queryFn: () => api.get<ShiftOptions>(`/plants/${plantId}/shifts/options?date=${date}`),
+    queryKey: ["current-shift", plantId],
+    queryFn: () => api.get<CurrentShiftResponse>(`/plants/${plantId}/shifts/current`),
     enabled: !!plantId,
-    staleTime: 300_000,
+    staleTime: 60_000,
   });
+}
+
+export interface CarriedOverIssue {
+  id: string;
+  type: string;
+  title: string;
+  severity: string;
+  status: string;
+  line_name: string;
+}
+
+export interface CarriedOverResponse {
+  previous_shift: {
+    shift_id: string;
+    name: string;
+    date: string;
+  } | null;
+  open_issues: CarriedOverIssue[];
+  total_count: number;
 }
 
 export function useCarriedOver(
   plantId: string | undefined,
+  shiftType: string | undefined,
   date: string,
-  shiftId: string | undefined,
 ) {
   return useQuery({
-    queryKey: ["carried-over", plantId, date, shiftId],
+    queryKey: ["carried-over", plantId, shiftType, date],
     queryFn: () =>
-      api.get<{ issues: string[] }>(
-        `/plants/${plantId}/shifts/carried-over?date=${date}&shift_id=${shiftId}`,
+      api.get<CarriedOverResponse>(
+        `/plants/${plantId}/shifts/carried-over?shift_id=${shiftType}&date=${date}`,
       ),
-    enabled: !!plantId && !!shiftId,
+    enabled: !!plantId && !!shiftType,
     staleTime: 60_000,
   });
 }

@@ -51,6 +51,7 @@ export interface ShiftState {
   shiftActive: boolean;
   shiftId: string | null;
   shiftName: string;
+  shiftType: string | null;
   lineId: string | null;
   line: string;
   startedAt: string | null;
@@ -93,6 +94,7 @@ const initialState: ShiftState = {
   shiftActive: false,
   shiftId: null,
   shiftName: "Morning",
+  shiftType: null,
   lineId: null,
   line: "Packaging Line 2",
   startedAt: null,
@@ -100,11 +102,7 @@ const initialState: ShiftState = {
   handover: "",
   reportApproved: false,
   events: [],
-  carriedOver: [
-    "Abnormal motor noise — Line 3 (unresolved)",
-    "Labeller misfeed — Packaging 2 (unresolved)",
-    "Quality observation SKU-204 (under review)",
-  ],
+  carriedOver: [],
   online: true,
   loading: false,
   error: null,
@@ -207,6 +205,7 @@ export function logout() {
     user: null,
     shiftActive: false,
     shiftId: null,
+    shiftType: null,
     startedAt: null,
     endedAt: null,
     events: [],
@@ -251,7 +250,19 @@ export async function endShift(handover: string): Promise<void> {
   if (!state.shiftId) return;
   setState({ loading: true, error: null });
   try {
-    await api.post(`/shifts/${state.shiftId}/end`, { handover });
+    await api.post(`/shifts/${state.shiftId}/end`, {
+      operator_id: state.user?.id,
+      handover: {
+        summary: handover || "Shift completed",
+        open_items: state.events
+          .filter((e) => e.status === "unresolved")
+          .map((e) => ({
+            description: e.observation || e.event_type,
+            severity: e.event_type === "breakdown" ? "high" : "medium",
+            assigned_to: "next_shift",
+          })),
+      },
+    });
     setState({
       shiftActive: false,
       endedAt: new Date().toISOString(),

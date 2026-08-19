@@ -1,7 +1,13 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { BadgeCheck, FileText, Share2 } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
-import { approveReport, formatTime, unresolvedCount, useShiftLog } from "@/lib/shift-log";
+import {
+  approveReport,
+  formatTime,
+  hasMinRole,
+  unresolvedCount,
+  useShiftLog,
+} from "@/lib/shift-log";
 
 export const Route = createFileRoute("/report")({
   head: () => ({
@@ -23,7 +29,7 @@ export const Route = createFileRoute("/report")({
 
 function ReportPage() {
   const state = useShiftLog();
-  const isSupervisor = state.user?.role === "supervisor";
+  const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
 
   return (
     <AppShell title="Shift report">
@@ -48,9 +54,7 @@ function ReportPage() {
           ) : null}
           <p
             className={`mt-4 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-black ${
-              state.reportApproved
-                ? "bg-success/20 text-success"
-                : "bg-warning/20 text-warning"
+              state.reportApproved ? "bg-success/20 text-success" : "bg-warning/20 text-warning"
             }`}
           >
             <BadgeCheck className="size-4" />

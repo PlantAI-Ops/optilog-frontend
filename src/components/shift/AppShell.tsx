@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { CloudOff, CloudUpload, Monitor, Wifi, WifiOff } from "lucide-react";
-import { pendingCount, setOnline, useShiftLog } from "@/lib/shift-log";
+import { CloudOff, CloudUpload, LogOut, Monitor, Wifi, WifiOff } from "lucide-react";
+import { logout, pendingCount, setOnline, useShiftLog } from "@/lib/shift-log";
 
 export function AppShell({ children, title }: { children: ReactNode; title?: string }) {
   const state = useShiftLog();
@@ -41,6 +41,14 @@ export function AppShell({ children, title }: { children: ReactNode; title?: str
             ) : (
               <WifiOff className="size-5 text-destructive" />
             )}
+          </button>
+          <button
+            type="button"
+            onClick={logout}
+            aria-label="Sign out"
+            className="flex size-11 items-center justify-center rounded-xl border border-border bg-secondary text-secondary-foreground"
+          >
+            <LogOut className="size-5" />
           </button>
         </div>
       </header>
