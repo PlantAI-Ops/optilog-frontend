@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Loader2 } from "lucide-react";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
-import { areas, assets, lines, plant } from "@/lib/ops-model";
+import { useShiftLog } from "@/lib/shift-log";
+import { usePlant, useAreas, useLines, useAssets } from "@/lib/hooks";
 
 export const Route = createFileRoute("/console/data")({
   head: () => ({
@@ -48,63 +50,85 @@ const ENDPOINTS = [
 ];
 
 function DataPage() {
+  const user = useShiftLog().user;
+  const plantId = user?.plant_ids?.[0];
+  const plantQuery = usePlant(plantId);
+  const areasQuery = useAreas(plantId);
+  const linesQuery = useLines(plantId);
+  const assetsQuery = useAssets(plantId);
+
+  const plantName = plantQuery.data?.name ?? "Loading…";
+  const areas = areasQuery.data ?? [];
+  const lines = linesQuery.data ?? [];
+  const assets = assetsQuery.data ?? [];
+
+  const loading = plantQuery.isLoading || areasQuery.isLoading || linesQuery.isLoading || assetsQuery.isLoading;
+
   return (
     <ConsoleShell title="Data model" subtitle="One canonical layer, many producers and consumers">
-      <div className="grid gap-6 xl:grid-cols-2">
-        <section className="rounded-xl border border-border bg-card p-4">
-          <h2 className="text-sm font-semibold">Asset hierarchy</h2>
-          <ul className="mt-3 space-y-1 font-mono text-xs">
-            <li>{plant.name}</li>
-            {areas.map((area) => (
-              <li key={area.id}>
-                <span className="text-muted-foreground">└──</span> {area.name}
-                <ul className="ml-6 space-y-1">
-                  {lines
-                    .filter((l) => l.area_id === area.id)
-                    .map((line) => (
-                      <li key={line.id}>
-                        <span className="text-muted-foreground">└──</span> {line.name}
-                        <ul className="ml-6">
-                          {assets
-                            .filter((a) => a.line_id === line.id)
-                            .map((a) => (
-                              <li key={a.id} className="text-muted-foreground">
-                                └── {a.name}
-                              </li>
-                            ))}
-                        </ul>
-                      </li>
-                    ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-6 xl:grid-cols-2">
+            <section className="rounded-xl border border-border bg-card p-4">
+              <h2 className="text-sm font-semibold">Asset hierarchy</h2>
+              <ul className="mt-3 space-y-1 font-mono text-xs">
+                <li>{plantName}</li>
+                {areas.map((area) => (
+                  <li key={area.id}>
+                    <span className="text-muted-foreground">└──</span> {area.name}
+                    <ul className="ml-6 space-y-1">
+                      {lines
+                        .filter((l) => l.area_id === area.id)
+                        .map((line) => (
+                          <li key={line.id}>
+                            <span className="text-muted-foreground">└──</span> {line.name}
+                            <ul className="ml-6">
+                              {assets
+                                .filter((a) => a.line_id === line.id)
+                                .map((a) => (
+                                  <li key={a.id} className="text-muted-foreground">
+                                    └── {a.name}
+                                  </li>
+                                ))}
+                            </ul>
+                          </li>
+                        ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            </section>
 
-        <section className="rounded-xl border border-border bg-card p-4">
-          <h2 className="text-sm font-semibold">Canonical event schema</h2>
-          <pre className="mt-3 overflow-x-auto rounded-lg bg-background p-3 font-mono text-xs text-muted-foreground">
-            {EVENT_SCHEMA}
-          </pre>
-        </section>
-      </div>
+            <section className="rounded-xl border border-border bg-card p-4">
+              <h2 className="text-sm font-semibold">Canonical event schema</h2>
+              <pre className="mt-3 overflow-x-auto rounded-lg bg-background p-3 font-mono text-xs text-muted-foreground">
+                {EVENT_SCHEMA}
+              </pre>
+            </section>
+          </div>
 
-      <section className="mt-6 rounded-xl border border-border bg-card">
-        <header className="border-b border-border px-4 py-3 text-sm font-semibold">
-          Outbound surface — how other systems consume Shift-Log
-        </header>
-        <table className="w-full text-sm">
-          <tbody>
-            {ENDPOINTS.map((e) => (
-              <tr key={e.path} className="border-b border-border/60 last:border-0">
-                <td className="w-16 px-4 py-2 font-mono text-xs text-primary">{e.method}</td>
-                <td className="px-4 py-2 font-mono text-xs">{e.path}</td>
-                <td className="px-4 py-2 text-xs text-muted-foreground">{e.desc}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+          <section className="mt-6 rounded-xl border border-border bg-card">
+            <header className="border-b border-border px-4 py-3 text-sm font-semibold">
+              Outbound surface — how other systems consume Shift-Log
+            </header>
+            <table className="w-full text-sm">
+              <tbody>
+                {ENDPOINTS.map((e) => (
+                  <tr key={e.path} className="border-b border-border/60 last:border-0">
+                    <td className="w-16 px-4 py-2 font-mono text-xs text-primary">{e.method}</td>
+                    <td className="px-4 py-2 font-mono text-xs">{e.path}</td>
+                    <td className="px-4 py-2 text-xs text-muted-foreground">{e.desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        </>
+      )}
     </ConsoleShell>
   );
 }

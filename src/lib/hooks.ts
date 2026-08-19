@@ -325,3 +325,30 @@ export function useShiftEvents(plantId: string | undefined, shiftId: string | un
     staleTime: STALE_TIME,
   });
 }
+
+/* -------------------------------------------------------------------------- */
+/*                              connectors page                               */
+/* -------------------------------------------------------------------------- */
+
+export interface ConnectorRow {
+  id: string;
+  name: string;
+  system: string;
+  kind: string;
+  direction: string;
+  health: string;
+  endpoint: string;
+  last_sync: string;
+  records_24h: number;
+  mapped_entities: string[];
+  mapping: { external: string; canonical: string }[];
+}
+
+export function usePlantConnectors(plantId: string | undefined) {
+  return useQuery({
+    queryKey: ["dashboard", plantId, "connectors"],
+    queryFn: () => api.get<ConnectorRow[]>(`/plants/${plantId}/connectors`),
+    enabled: !!plantId,
+    staleTime: 300_000,
+  });
+}

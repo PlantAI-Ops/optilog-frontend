@@ -232,3 +232,202 @@ export function useCreateRCA() {
 **Gotcha:**
 - `useCreateRCA` needs the `incidentId` in the mutation variables — use `onSuccess: (_res, vars)` where `vars` is the mutation input
 - RCA status flow: `draft` → (edit) → `completed` → `approve` → `approved`
+
+---
+
+## 2026-08-18: Breakdown event type + supervisor RCA creation from events
+
+**Context:** Added "breakdown" as a new event type and enabled supervisors+ to create RCA directly from breakdown events on the events page.
+
+**Decisions:**
+- Added `"breakdown"` to `EventType` union in `ops-model.ts`
+- Added `breakdown` to the `TYPES` filter array and `filterLabel()` in `events.tsx`
+- Created `useCreateIncident` mutation hook — `POST /plants/{plantId}/incidents` with `{ event_id, title }`
+- Events page checks `hasMinRole(user?.role, "supervisor")` to gate the "Create RCA" button
+- "Create RCA" button only appears on expanded breakdown events that don't already have an `incident_id`
+- Button calls `createIncident.mutate()` then navigates to `/console/rca` via `useNavigate()`
+- New incident auto-appears in RCA sidebar since `useIncidents` is already cached/invalidated
+
+**Pattern: Role-gated UI with hasMinRole**
+```ts
+const canCreateRCA = hasMinRole(user?.role ?? "operator", "supervisor");
+// In JSX: {e.event_type === "breakdown" && canCreateRCA && !e.incident_id ? (button) : null}
+```
+
+**Pattern: Mutation + navigation**
+```ts
+createIncident.mutate(
+  { plantId, data: { event_id: e.id, title: e.description } },
+  { onSuccess: () => navigate({ to: "/console/rca" }) },
+);
+```
+
+**Gotchas:**
+- `hasMinRole` is exported from `shift-log.ts` — import it alongside `useShiftLog`
+- The `useCreateIncident` hook invalidates `["dashboard", plantId, "incidents"]` so the RCA page sidebar updates
+- Must pass `plantId` in mutation vars (not just `event_id`) because the endpoint is plant-scoped
+- Other modified files in the working tree (AppShell.tsx, end-shift.tsx, etc.) were NOT committed — only the 3 relevant files were staged
+
+---
+
+## 2026-08-19: Combined endpoint for breakdown RCA creation
+
+**Context:** Replaced two-step flow (create incident → start investigation) with single combined endpoint.
+
+**Decisions:**
+- Replaced `useCreateIncident` (`POST /plants/{plantId}/incidents`) with `useCreateRCAFromEvent` (`POST /rca/events/{eventId}/rca`)
+- New hook only needs `eventId` — no `plantId` or `data` body required
+- Button handler simplified: `createRCAFromEvent.mutate({ eventId: e.id })` → navigate to `/console/rca`
+- Invalidates `["dashboard", "incidents"]` so RCA page sidebar picks up the new incident
+
+**Pattern: Event-scoped mutation (no plantId)**
+```ts
+export function useCreateRCAFromEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId }: { eventId: string }) =>
+      api.post<RCARow>(`/rca/events/${eventId}/rca`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard", "incidents"] });
+    },
+  });
+}
+```
+
+**Gotcha:**
+- The old `useCreateIncident` hook is no longer used — if no other page references it, it can be removed from hooks.ts in future cleanup
+
+---
+
+## 2026-08-19: Create RCA dropdown on RCA page
+
+**Context:** Added a "Create RCA" dropdown in the RCA page sidebar header, allowing supervisors to create incident + RCA from breakdown events without leaving the page.
+
+**Decisions:**
+- Reused `useEvents(plantId, today, { type: "breakdown" })` hook — no new backend endpoint needed
+- Client-side filtered `unlinkedBreakdowns = events.data?.filter(e => !e.incident_id)` — breakdowns are a small subset, local filter is fine
+- Dropdown uses `useRef` + relative positioning for click-outside detection (though click-outside isn't implemented yet — dropdown closes on selection)
+- After successful creation, calls `incidents.refetch()` to update the sidebar immediately
+- Role-gated with `hasMinRole(user?.role, "supervisor")` — dropdown only visible to supervisors+
+- Added `ref` import from React for dropdown ref
+
+**Pattern: Dropdown in sidebar header**
+```tsx
+<header className="flex items-center justify-between ...">
+  Incidents
+  {canCreateRCA ? (
+    <div className="relative" ref={dropdownRef}>
+      <button onClick={() => setDropdownOpen(o => !o)}>
+        <Plus /> Create RCA <ChevronDown />
+      </button>
+      {dropdownOpen ? (
+        <div className="absolute right-0 top-full z-10 ...">
+          {/* dropdown content */}
+        </div>
+      ) : null}
+    </div>
+  ) : null}
+</header>
+```
+
+**Gotcha:**
+- The dropdown doesn't close on click-outside yet — only on selection or toggle. Could add a `useEffect` with `mousedown` listener if needed.
+- `incidents.refetch()` is called after creation rather than relying on cache invalidation alone — ensures the sidebar updates immediately even if the invalidation is slow
+
+---
+
+## 2026-08-19: Backend API spec alignment + plant name + auth redirect
+
+**Context:** Audited all frontend hooks against the finalized backend API reference and fixed mismatches.
+
+**Fixes applied:**
+
+1. **RCA endpoint paths** — Added missing `/rca/` prefix:
+   - `useIncidentRCA`: `/incidents/{id}/rca` → `/rca/incidents/{id}/rca`
+   - `useCreateRCA`: `/incidents/{id}/rca` → `/rca/incidents/{id}/rca`
+   - `useUpdateRCA`, `useApproveRCA`, `useCreateRCAFromEvent` were already correct
+
+2. **Approve button** — Removed `|| rca.data.status === "draft"` from condition. Backend workflow: `draft → in_progress → completed → approved`. Approve only at `completed`.
+
+3. **`environmental` event type** — Added to `EventType` union in `ops-model.ts`, `TYPES` filter, and `filterLabel()` in `events.tsx`
+
+4. **Dead code** — `useCreateIncident` was already removed in prior commit
+
+5. **Plant name** — ConsoleShell now fetches plant data via `usePlant(plantId)` hook (`GET /plants/{plantId}`) instead of using hardcoded `"Ikeja Plant"` from seed data
+
+6. **Auth redirect** — `api.ts` now calls `clearToken()` and redirects to `/` on 401 responses
+
+**Pattern: Auto-fetch plant name in shell**
+```ts
+// ConsoleShell.tsx
+const user = useShiftLog().user;
+const plantId = user?.plant_ids?.[0];
+const plant = usePlant(plantId);
+const displayName = plantName ?? plant.data?.name ?? "—";
+```
+
+**Pattern: 401 redirect in API client**
+```ts
+if (res.status === 401) {
+  clearToken();
+  if (typeof window !== "undefined") window.location.href = "/";
+}
+```
+
+**Gotchas:**
+- `usePlant` uses `staleTime: 300_000` (5 min) since plant name rarely changes
+- The backend auth response doesn't include `plant_name` — only `plant_ids`, so a separate fetch is required
+- `api.ts` was previously untracked in git (in `.gitignore` or just never added) — this commit added it as a new tracked file
+- `plant` import from `ops-model.ts` in ConsoleShell was removed — the hardcoded seed plant is no longer used anywhere in the console
+
+---
+
+## 2026-08-19: Integrations + Data Model pages wired to live backend
+
+**Context:** Connected the remaining two console pages (Integrations, Data Model) to live backend endpoints, completing all console page wiring.
+
+**Decisions:**
+- Created `usePlantConnectors` hook — `GET /plants/{id}/connectors`, returns `ConnectorRow[]` with health, direction, kind, mapping
+- `useAreas`, `useLines`, `useAssets` hooks already existed — reused without changes
+- Integrations page uses `ConnectorRow` type (matches existing `Connector` interface shape from `ops-model.ts`)
+- Data page shows asset hierarchy tree from live data — area → line → asset nested structure
+- Both pages use `useShiftLog().user?.plant_ids?.[0]` for plantId, same pattern as all console pages
+- Added loading spinners for both pages using `Loader2` from lucide-react
+
+**Pattern: Reuse existing hooks**
+```ts
+// Already existed in hooks.ts — no new code needed
+export function useAreas(plantId: string | undefined) {
+  return useQuery({
+    queryKey: ["dashboard", plantId, "areas"],
+    queryFn: () => api.get<Area[]>(`/plants/${plantId}/areas`),
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
+}
+```
+
+**Pattern: Auto-select first connector**
+```ts
+const [id, setId] = useState<string | undefined>(undefined);
+const connector = connectors.find((c) => c.id === id) ?? connectors[0];
+// Auto-select first item after data loads
+if (id === undefined && connectors.length > 0) {
+  setId(connectors[0]!.id);
+}
+```
+
+**Gotchas:**
+- `SOURCE_LABEL` lookup needs fallback: `SOURCE_LABEL[connector.system] ?? connector.system.toUpperCase()` — API returns strings that may not be in the static map
+- Integrations page is documentation-heavy — the inbound/normalised payload code cards are static, not fetched from backend
+- Data page's event schema and outbound endpoints are also documentation — only the asset hierarchy tree is live data
+- All console pages are now wired to live backend — only RecordShift (mobile) remains blocked on backend endpoints
+
+**Console page wiring status:**
+- ✅ Dashboard — wired
+- ✅ Shifts — wired
+- ✅ Teams — wired
+- ✅ Events — wired
+- ✅ RCA — wired
+- ✅ Integrations — wired (this commit)
+- ✅ Data Model — wired (this commit)
