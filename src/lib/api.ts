@@ -58,6 +58,7 @@ async function apiFetch<T = unknown>(method: string, path: string, body?: unknow
     if (res.status === 401) {
       clearToken();
       if (typeof window !== "undefined") {
+        localStorage.removeItem("shiftlog.state.v1");
         window.location.replace("/");
       }
     }
