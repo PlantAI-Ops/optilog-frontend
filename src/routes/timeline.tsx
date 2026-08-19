@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { ChevronDown, CircleCheck, CircleDot, CircleAlert, Pencil, Play } from "lucide-react";
+import { ChevronDown, CircleCheck, CircleDot, CircleAlert, Loader2, Pencil, Play } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { EventEditor } from "@/components/shift/EventEditor";
+import { useEventAudio } from "@/lib/hooks";
 import {
   STATUS_LABEL,
   formatTime,
+  hasMinRole,
   updateEvent,
   useShiftLog,
   type ShiftEvent,
@@ -39,7 +41,7 @@ function TimelinePage() {
   const state = useShiftLog();
   const [openId, setOpenId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
-  const isSupervisor = state.user?.role === "supervisor";
+  const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
 
   const editing = state.events.find((e) => e.id === editId);
   if (editing) {
@@ -67,9 +69,7 @@ function TimelinePage() {
           </span>
         </div>
 
-        {state.startedAt ? (
-          <Row time={formatTime(state.startedAt)} title="Shift started" />
-        ) : null}
+        {state.startedAt ? <Row time={formatTime(state.startedAt)} title="Shift started" /> : null}
 
         {state.events.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-border p-6 text-center text-base text-muted-foreground">
@@ -86,7 +86,9 @@ function TimelinePage() {
                 onClick={() => setOpenId(open ? null : event.id)}
                 className="flex w-full items-center gap-3 px-4 py-4 text-left"
               >
-                <span className="text-lg font-black tabular-nums">{formatTime(event.timestamp)}</span>
+                <span className="text-lg font-black tabular-nums">
+                  {formatTime(event.timestamp)}
+                </span>
                 <span className="flex-1">
                   <span className="block text-lg font-bold leading-tight">
                     {event.event_type || "Untitled event"}
@@ -118,12 +120,12 @@ function TimelinePage() {
                         Original transcript
                       </p>
                       <p className="mt-1 text-base italic leading-snug">"{event.transcript}"</p>
-                      <button
-                        type="button"
-                        className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card font-bold"
-                      >
-                        <Play className="size-5" /> Play audio
-                      </button>
+                      {event.recording_id ? (
+                        <PlayAudioButton
+                          shiftId={state.shiftId ?? undefined}
+                          eventId={event.id}
+                        />
+                      ) : null}
                     </div>
                   ) : null}
                   {isSupervisor ? (
@@ -149,6 +151,49 @@ function TimelinePage() {
         </Link>
       </div>
     </AppShell>
+  );
+}
+
+function PlayAudioButton({ shiftId, eventId }: { shiftId: string | undefined; eventId: string }) {
+  const audioQuery = useEventAudio(shiftId, eventId);
+  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const handlePlay = async () => {
+    if (playing && audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      setPlaying(false);
+      return;
+    }
+    const url = audioQuery.data?.audio_url;
+    if (!url) return;
+    const audio = new Audio(url);
+    audio.onended = () => {
+      setPlaying(false);
+      audioRef.current = null;
+    };
+    audio.play();
+    audioRef.current = audio;
+    setPlaying(true);
+  };
+
+  if (!audioQuery.data?.audio_url && !audioQuery.isLoading) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={handlePlay}
+      disabled={audioQuery.isLoading}
+      className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card font-bold disabled:opacity-60"
+    >
+      {audioQuery.isLoading ? (
+        <Loader2 className="size-5 animate-spin" />
+      ) : (
+        <Play className="size-5" />
+      )}
+      {playing ? "Pause audio" : "Play audio"}
+    </button>
   );
 }
 

@@ -34,6 +34,7 @@ export interface ShiftEvent {
   transcript: string;
   sync: SyncState;
   logged_by: string;
+  recording_id?: string;
 }
 
 export interface User {
@@ -50,6 +51,7 @@ export interface ShiftState {
   shiftActive: boolean;
   shiftId: string | null;
   shiftName: string;
+  lineId: string | null;
   line: string;
   startedAt: string | null;
   endedAt: string | null;
@@ -91,6 +93,7 @@ const initialState: ShiftState = {
   shiftActive: false,
   shiftId: null,
   shiftName: "Morning",
+  lineId: null,
   line: "Packaging Line 2",
   startedAt: null,
   endedAt: null,
@@ -336,82 +339,6 @@ export const STATUS_LABEL: Record<EventStatus, string> = {
   unresolved: "Unresolved",
   under_review: "Under review",
 };
-
-/* ------------------------- simulated structuring ------------------------- */
-
-const SAMPLES: Array<Omit<ShiftEvent, "id" | "timestamp" | "sync" | "logged_by">> = [
-  {
-    event_type: "Conveyor jam",
-    asset: "Packaging Line 2",
-    subsystem: "Infeed conveyor",
-    duration_minutes: 20,
-    observation: "Line stopped, product backed up at infeed.",
-    reported_cause: "Operator reported a jam at the conveyor.",
-    verified_cause: "Maintenance found a misaligned guide rail.",
-    action_taken: "Guide rail realigned, line restarted.",
-    status: "resolved",
-    source: "voice",
-    confidence: 0.91,
-    transcript:
-      "Line 2 stopped around ten fifteen. The conveyor was jammed. Maintenance came and fixed it after about twenty minutes.",
-  },
-  {
-    event_type: "Material shortage",
-    asset: "Packaging Line 2",
-    subsystem: "Carton magazine",
-    duration_minutes: 12,
-    observation: "Cartons ran out, line idled waiting on stores.",
-    reported_cause: "Stores delivery late.",
-    verified_cause: "",
-    action_taken: "Pallet delivered, line resumed.",
-    status: "resolved",
-    source: "voice",
-    confidence: 0.84,
-    transcript: "We ran out of cartons for about twelve minutes waiting on stores.",
-  },
-  {
-    event_type: "Abnormal motor noise",
-    asset: "Line 3",
-    subsystem: "Drive motor",
-    duration_minutes: null,
-    observation: "Grinding noise from the drive motor at high speed.",
-    reported_cause: "Possible bearing wear.",
-    verified_cause: "",
-    action_taken: "Logged for maintenance inspection next shift.",
-    status: "unresolved",
-    source: "voice",
-    confidence: 0.72,
-    transcript: "There's a grinding noise coming off the line three drive motor when it speeds up.",
-  },
-  {
-    event_type: "Quality observation",
-    asset: "Packaging Line 2",
-    subsystem: "Labeller",
-    duration_minutes: null,
-    observation: "Labels skewed on SKU-204, roughly one in twenty packs.",
-    reported_cause: "Label web tension suspected.",
-    verified_cause: "",
-    action_taken: "Samples pulled for QA review.",
-    status: "under_review",
-    source: "voice",
-    confidence: 0.68,
-    transcript: "Labels are going on crooked on SKU two oh four, maybe one in twenty packs.",
-  },
-];
-
-let sampleIndex = 0;
-
-export function structureRecording(loggedBy: string): ShiftEvent {
-  const sample = SAMPLES[sampleIndex % SAMPLES.length]!;
-  sampleIndex += 1;
-  return {
-    ...sample,
-    id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-    timestamp: new Date().toISOString(),
-    sync: "pending",
-    logged_by: loggedBy,
-  };
-}
 
 export function blankEvent(loggedBy: string): ShiftEvent {
   return {

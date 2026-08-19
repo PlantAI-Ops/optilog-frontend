@@ -431,3 +431,82 @@ if (id === undefined && connectors.length > 0) {
 - ✅ RCA — wired
 - ✅ Integrations — wired (this commit)
 - ✅ Data Model — wired (this commit)
+
+---
+
+## 2026-08-19: Mobile flow wired to live backend (STT + shift options + audio)
+
+**Context:** Connected the entire mobile operator flow to live backend endpoints — shift selection, voice recording with STT, and audio playback.
+
+**Endpoints implemented:**
+1. `GET /plants/{id}/shifts/options?date=` — shift types + lines for dropdown
+2. `GET /plants/{id}/shifts/carried-over?date=&shift_id=` — previous shift issues
+3. `POST /recordings/speech-to-text` — Gemini STT + Groq extraction
+4. `GET /shifts/{id}/events/{id}/audio` — presigned URL for playback
+5. `POST /recordings` — save audio recording on confirm
+
+**Changes:**
+
+1. **`api.ts`** — Added `postFormData()` function for multipart/form-data uploads (speech-to-text, recording save)
+
+2. **`hooks.ts`** — Added 4 new exports:
+   - `useShiftOptions(plantId, date)` — fetches available shifts + lines
+   - `useCarriedOver(plantId, date, shiftId)` — fetches unresolved issues
+   - `useEventAudio(shiftId, eventId)` — fetches presigned audio URL
+   - `transcribeAudio(audioBlob, plantId, shiftId)` — one-shot function (not a hook)
+
+3. **`shift-log.ts`** — Type changes:
+   - Added `recording_id?: string` to `ShiftEvent`
+   - Added `lineId: string | null` to `ShiftState`
+   - Updated `initialState` with `lineId: null`
+   - Removed `SAMPLES` array and `structureRecording()` function (sample data)
+   - Kept `blankEvent()` for manual entry fallback
+
+4. **`routes/index.tsx`** — StartShiftScreen:
+   - Replaced static display with dropdowns for shift and line selection
+   - Fetches options from `useShiftOptions(plantId, today)`
+   - Auto-fetches carried-over issues when shift is selected
+   - `handleStart()` stores `shiftId`, `shiftName`, `lineId`, `line` in state
+   - Button disabled until both dropdowns are selected
+
+5. **`routes/index.tsx`** — RecordScreen:
+   - Added Web Speech API integration for live transcript preview during recording
+   - Added `MediaRecorder` to capture audio blob (webm format)
+   - `startRecording()`: starts both MediaRecorder and Web Speech API
+   - `stopRecording()`: stops both, sends audio to `POST /recordings/speech-to-text`
+   - Uses backend result (transcript + structured_event) for confirm phase
+   - Falls back to Web Speech preview if backend fails
+   - `commit()`: saves audio to `POST /recordings` if user confirms
+   - Shows live transcript preview while recording
+   - Processing message changed from "Writing up your event…" to "Transcribing…"
+
+6. **`routes/timeline.tsx`** — Audio playback:
+   - Added `PlayAudioButton` component using `useEventAudio` hook
+   - Plays audio from presigned URL when available
+   - Only shows for events with `recording_id`
+   - Shows loading state while fetching URL
+   - Toggle play/pause functionality
+
+**Architecture:**
+- Web Speech API = browser-side, real-time preview, free, lower accuracy
+- Backend STT = Gemini + Groq, accurate transcription + structured event extraction
+- Hybrid approach = live preview for UX, backend result for accuracy
+- POST /speech-to-text is stateless (no recording doc created) — fast response
+- POST /recordings is called only on user confirm — saves audio to R2
+
+**Gotchas:**
+- `navigator.mediaDevices.getUserMedia` may fail if microphone access is denied — still allow manual entry
+- Web Speech API is not supported in all browsers (Safari limited) — gracefully degrade
+- `MediaRecorder` on Chrome defaults to `webm` format — backend accepts all formats
+- Audio chunks accumulate in `audioChunksRef` — must clear on new recording
+- `useEventAudio` has `staleTime: 3_600_000` (1 hour) since presigned URLs expire in 1 hour
+- `structureRecording()` was removed — the RecordScreen now requires a working microphone or falls back to manual entry
+- `postFormData` is a standalone function, not on the `api` object — imported separately from `@/lib/api`
+
+**Mobile flow status:**
+- ✅ Login → `POST /auth/login` + `GET /auth/me`
+- ✅ StartShiftScreen → dropdowns for shift + line, carried-over from backend
+- ✅ RecordScreen → voice recording + Web Speech API preview + backend STT
+- ✅ TimelinePage → audio playback from presigned URL
+- ✅ EndShiftPage → `POST /shifts/{shift_id}/end`
+- ✅ ReportPage → local state only (no additional endpoints needed)

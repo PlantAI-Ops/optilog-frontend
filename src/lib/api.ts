@@ -78,3 +78,40 @@ export const api = {
   patch: <T = unknown>(path: string, body?: unknown) => apiFetch<T>("PATCH", path, body),
   del: <T = unknown>(path: string) => apiFetch<T>("DELETE", path),
 };
+
+export async function postFormData<T = unknown>(path: string, formData: FormData): Promise<T> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  const text = await res.text();
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = text;
+  }
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      clearToken();
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("shiftlog.state.v1");
+        window.location.replace("/");
+      }
+    }
+    const message =
+      (data && typeof data === "object" && "message" in data
+        ? (data as { message: string }).message
+        : null) ?? `Request failed (${res.status})`;
+    throw new ApiError(message, res.status);
+  }
+
+  return data as T;
+}

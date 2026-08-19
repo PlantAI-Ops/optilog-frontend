@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, postFormData } from "./api";
 
 /* -------------------------------------------------------------------------- */
 /*                              response types                                */
@@ -351,4 +351,84 @@ export function usePlantConnectors(plantId: string | undefined) {
     enabled: !!plantId,
     staleTime: 300_000,
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/*                            mobile shift endpoints                          */
+/* -------------------------------------------------------------------------- */
+
+export interface ShiftOption {
+  id: string;
+  name: string;
+  start: string;
+  end: string;
+}
+
+export interface LineOption {
+  id: string;
+  name: string;
+}
+
+export interface ShiftOptions {
+  shifts: ShiftOption[];
+  lines: LineOption[];
+}
+
+export function useShiftOptions(plantId: string | undefined, date: string) {
+  return useQuery({
+    queryKey: ["shift-options", plantId, date],
+    queryFn: () => api.get<ShiftOptions>(`/plants/${plantId}/shifts/options?date=${date}`),
+    enabled: !!plantId,
+    staleTime: 300_000,
+  });
+}
+
+export function useCarriedOver(
+  plantId: string | undefined,
+  date: string,
+  shiftId: string | undefined,
+) {
+  return useQuery({
+    queryKey: ["carried-over", plantId, date, shiftId],
+    queryFn: () =>
+      api.get<{ issues: string[] }>(
+        `/plants/${plantId}/shifts/carried-over?date=${date}&shift_id=${shiftId}`,
+      ),
+    enabled: !!plantId && !!shiftId,
+    staleTime: 60_000,
+  });
+}
+
+export function useEventAudio(shiftId: string | undefined, eventId: string | undefined) {
+  return useQuery({
+    queryKey: ["event-audio", shiftId, eventId],
+    queryFn: () =>
+      api.get<{ audio_url: string | null }>(`/shifts/${shiftId}/events/${eventId}/audio`),
+    enabled: !!shiftId && !!eventId,
+    staleTime: 3_600_000,
+  });
+}
+
+export interface TranscribeResult {
+  transcript: string;
+  structured_event: {
+    event_type?: string;
+    observation?: string;
+    reported_cause?: string;
+    severity?: string;
+    asset_name?: string;
+    duration_seconds?: number;
+  };
+}
+
+export async function transcribeAudio(
+  audioBlob: Blob,
+  plantId?: string,
+  shiftId?: string,
+): Promise<TranscribeResult> {
+  const formData = new FormData();
+  formData.append("file", audioBlob, "recording.webm");
+  if (plantId) formData.append("plant_id", plantId);
+  if (shiftId) formData.append("shift_id", shiftId);
+  return postFormData<TranscribeResult>("/recordings/speech-to-text", formData);
 }
