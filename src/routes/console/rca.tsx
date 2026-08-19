@@ -295,7 +295,7 @@ function RcaPage() {
                     <div className="rounded-xl border border-border bg-card p-4">
                       <h2 className="text-sm font-semibold">Timeline</h2>
                       <ol className="mt-3 space-y-3">
-                        {rca.data.timeline.map((t) => (
+                        {rca.data.timeline?.map((t) => (
                           <li key={`${t.time}-${t.label}`} className="flex gap-3">
                             <span className="w-12 shrink-0 text-xs tabular-nums text-muted-foreground">
                               {t.time}
@@ -311,7 +311,7 @@ function RcaPage() {
                     <div className="rounded-xl border border-border bg-card p-4">
                       <h2 className="text-sm font-semibold">Evidence</h2>
                       <ul className="mt-3 space-y-2">
-                        {rca.data.evidence.map((e) => (
+                        {rca.data.evidence?.map((e) => (
                           <li
                             key={e.label}
                             className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
@@ -337,7 +337,7 @@ function RcaPage() {
 
                     <h3 className="mt-5 text-sm font-semibold">5 Why</h3>
                     <ol className="mt-2 space-y-2">
-                      {rca.data.five_why.map((w, idx) => (
+                      {rca.data.five_why?.map((w, idx) => (
                         <li key={idx} className="rounded-lg border border-border p-3">
                           <p className="text-xs font-medium text-muted-foreground">
                             {idx + 1}. {w.question || "Not yet answered"}
