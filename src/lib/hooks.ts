@@ -78,6 +78,7 @@ export interface IncidentRow {
   line_id: string;
   line_name: string;
   shift_id: string;
+  shift_name: string;
   date: string;
   duration_minutes: number;
   status: string;

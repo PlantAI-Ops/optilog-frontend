@@ -215,7 +215,7 @@ function RcaPage() {
                 <StatCard label="Duration" value={`${incident.duration_minutes} min`} tone="warning" />
                 <StatCard
                   label="Shift"
-                  value={incident.shift_id ? `Shift ${incident.shift_id.split("_").pop()}` : "—"}
+                  value={incident.shift_name ?? "—"}
                   hint={incident.line_name}
                 />
                 <StatCard label="Owner" value={incident.owner} hint={`Due ${incident.due_date}`} />
