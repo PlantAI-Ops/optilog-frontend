@@ -1,6 +1,19 @@
 import { useSyncExternalStore } from "react";
+import { api, clearToken, getToken, setRefreshToken, setToken } from "./api";
 
-export type Role = "operator" | "supervisor";
+/* -------------------------------------------------------------------------- */
+/*                                   types                                    */
+/* -------------------------------------------------------------------------- */
+
+export type Role =
+  | "operator"
+  | "technician"
+  | "supervisor"
+  | "shift_manager"
+  | "plant_manager"
+  | "integration_admin"
+  | "system_admin";
+
 export type EventStatus = "resolved" | "unresolved" | "under_review";
 export type SyncState = "pending" | "synced";
 
@@ -9,7 +22,7 @@ export interface ShiftEvent {
   event_type: string;
   asset: string;
   subsystem: string;
-  timestamp: string; // ISO
+  timestamp: string;
   duration_minutes: number | null;
   observation: string;
   reported_cause: string;
@@ -23,9 +36,19 @@ export interface ShiftEvent {
   logged_by: string;
 }
 
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  tenant_id: string;
+  plant_ids: string[];
+}
+
 export interface ShiftState {
-  user: { name: string; role: Role } | null;
+  user: User | null;
   shiftActive: boolean;
+  shiftId: string | null;
   shiftName: string;
   line: string;
   startedAt: string | null;
@@ -35,13 +58,38 @@ export interface ShiftState {
   events: ShiftEvent[];
   carriedOver: string[];
   online: boolean;
+  loading: boolean;
+  error: string | null;
 }
+
+/* -------------------------------------------------------------------------- */
+/*                              role hierarchy                                */
+/* -------------------------------------------------------------------------- */
+
+const ROLE_HIERARCHY: Record<Role, number> = {
+  operator: 0,
+  technician: 1,
+  supervisor: 2,
+  shift_manager: 3,
+  plant_manager: 4,
+  integration_admin: 5,
+  system_admin: 6,
+};
+
+export function hasMinRole(userRole: Role, required: Role): boolean {
+  return ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[required];
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  store                                     */
+/* -------------------------------------------------------------------------- */
 
 const STORAGE_KEY = "shiftlog.state.v1";
 
 const initialState: ShiftState = {
   user: null,
   shiftActive: false,
+  shiftId: null,
   shiftName: "Morning",
   line: "Packaging Line 2",
   startedAt: null,
@@ -55,10 +103,13 @@ const initialState: ShiftState = {
     "Quality observation SKU-204 (under review)",
   ],
   online: true,
+  loading: false,
+  error: null,
 };
 
 let state: ShiftState = initialState;
 let hydrated = false;
+let syncing = false;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -103,32 +154,125 @@ export function useShiftLog(): ShiftState {
   );
 }
 
-/* ------------------------------ actions ------------------------------ */
+/* -------------------------------------------------------------------------- */
+/*                                  auth                                      */
+/* -------------------------------------------------------------------------- */
 
-export function login(name: string, role: Role) {
-  setState({ user: { name, role } });
+interface LoginResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+}
+
+export async function login(email: string, password: string): Promise<void> {
+  setState({ loading: true, error: null });
+  try {
+    const res = await api.post<LoginResponse>("/auth/login", {
+      email,
+      password,
+    });
+    setToken(res.access_token);
+    setRefreshToken(res.refresh_token);
+    const user = await api.get<User>("/auth/me");
+    setState({ user, loading: false });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Login failed";
+    setState({ error: message, loading: false });
+    throw e;
+  }
+}
+
+export async function restoreSession(): Promise<void> {
+  const token = getToken();
+  if (!token) return;
+  setState({ loading: true });
+  try {
+    const user = await api.get<User>("/auth/me");
+    setState({ user, loading: false });
+  } catch (e: unknown) {
+    clearToken();
+    setState({ user: null, loading: false });
+    if (e instanceof Error && "status" in e && (e as { status: number }).status === 401) {
+      throw e;
+    }
+  }
 }
 
 export function logout() {
-  setState({ user: null });
-}
-
-export function startShift() {
+  clearToken();
   setState({
-    shiftActive: true,
-    startedAt: new Date().toISOString(),
+    user: null,
+    shiftActive: false,
+    shiftId: null,
+    startedAt: null,
     endedAt: null,
+    events: [],
+    handover: "",
     reportApproved: false,
+    error: null,
   });
 }
 
-export function endShift(handover: string) {
-  setState({ shiftActive: false, endedAt: new Date().toISOString(), handover });
+/* -------------------------------------------------------------------------- */
+/*                              shift actions                                 */
+/* -------------------------------------------------------------------------- */
+
+interface StartShiftResponse {
+  id: string;
+  started_at: string;
 }
 
-export function addEvent(event: ShiftEvent) {
+export async function startShift(): Promise<void> {
+  setState({ loading: true, error: null });
+  try {
+    const res = await api.post<StartShiftResponse>("/shifts/start", {
+      shift_name: state.shiftName,
+      line: state.line,
+    });
+    setState({
+      shiftActive: true,
+      shiftId: res.id,
+      startedAt: res.started_at,
+      endedAt: null,
+      reportApproved: false,
+      loading: false,
+    });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Failed to start shift";
+    setState({ error: message, loading: false });
+    throw e;
+  }
+}
+
+export async function endShift(handover: string): Promise<void> {
+  if (!state.shiftId) return;
+  setState({ loading: true, error: null });
+  try {
+    await api.post(`/shifts/${state.shiftId}/end`, { handover });
+    setState({
+      shiftActive: false,
+      endedAt: new Date().toISOString(),
+      handover,
+      loading: false,
+    });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Failed to end shift";
+    setState({ error: message, loading: false });
+    throw e;
+  }
+}
+
+export async function addEvent(event: ShiftEvent): Promise<void> {
   setState((s) => ({ events: [...s.events, event] }));
-  if (state.online) syncPending();
+  if (!state.shiftId || !state.online) return;
+  try {
+    await api.post(`/shifts/${state.shiftId}/events`, event);
+    setState((s) => ({
+      events: s.events.map((e) => (e.id === event.id ? { ...e, sync: "synced" as const } : e)),
+    }));
+  } catch {
+    /* will be retried by syncPending */
+  }
 }
 
 export function updateEvent(id: string, patch: Partial<ShiftEvent>) {
@@ -137,19 +281,35 @@ export function updateEvent(id: string, patch: Partial<ShiftEvent>) {
   }));
 }
 
+/* -------------------------------------------------------------------------- */
+/*                                  sync                                      */
+/* -------------------------------------------------------------------------- */
+
 export function setOnline(online: boolean) {
   setState({ online });
   if (online) syncPending();
 }
 
-export function syncPending() {
-  window.setTimeout(() => {
-    if (!state.online) return;
-    setState((s) => ({
-      events: s.events.map((e) => (e.sync === "pending" ? { ...e, sync: "synced" as const } : e)),
-    }));
-  }, 1600);
+export async function syncPending(): Promise<void> {
+  if (syncing || !state.online || !state.shiftId) return;
+  syncing = true;
+  const pending = state.events.filter((e) => e.sync === "pending");
+  for (const event of pending) {
+    try {
+      await api.post(`/shifts/${state.shiftId}/events`, event);
+      setState((s) => ({
+        events: s.events.map((e) => (e.id === event.id ? { ...e, sync: "synced" as const } : e)),
+      }));
+    } catch {
+      /* will retry on next sync */
+    }
+  }
+  syncing = false;
 }
+
+/* -------------------------------------------------------------------------- */
+/*                                helpers                                     */
+/* -------------------------------------------------------------------------- */
 
 export function approveReport() {
   setState({ reportApproved: true });
@@ -164,7 +324,11 @@ export function unresolvedCount(s: ShiftState) {
 }
 
 export function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  return new Date(iso).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 export const STATUS_LABEL: Record<EventStatus, string> = {

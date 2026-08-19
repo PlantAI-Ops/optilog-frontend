@@ -57,7 +57,9 @@ async function apiFetch<T = unknown>(method: string, path: string, body?: unknow
   if (!res.ok) {
     if (res.status === 401) {
       clearToken();
-      if (typeof window !== "undefined") window.location.href = "/";
+      if (typeof window !== "undefined") {
+        window.location.replace("/");
+      }
     }
     const message =
       (data && typeof data === "object" && "message" in data
