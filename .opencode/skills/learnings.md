@@ -510,3 +510,51 @@ if (id === undefined && connectors.length > 0) {
 - ✅ TimelinePage → audio playback from presigned URL
 - ✅ EndShiftPage → `POST /shifts/{shift_id}/end`
 - ✅ ReportPage → local state only (no additional endpoints needed)
+
+---
+
+## 2026-08-19: Audio-reactive ring pulse (Google Meet style)
+
+**Context:** Replaced static pulsing animation on the RECORD button with an audio-reactive ring that responds to microphone input in real-time.
+
+**Architecture:**
+- Web Audio API `AnalyserNode` reads frequency data from the mic stream at 60fps
+- `requestAnimationFrame` loop calculates average audio level (0-1)
+- Direct DOM manipulation via `buttonRef.current.style.boxShadow` — bypasses React for performance
+- `box-shadow` spread + opacity driven by audio level — GPU-accelerated, matches Google Meet aesthetic
+
+**Implementation:**
+- `startAudioAnalyser(stream)` — creates `AudioContext`, `AnalyserNode`, connects mic stream, starts RAF loop
+- `stopAudioAnalyser()` — cancels RAF, closes AudioContext, clears refs
+- `buttonRef` on the big RECORD button for direct DOM access
+- Removed `record-pulse` CSS class — replaced with dynamic `box-shadow`
+
+**Key parameters:**
+- `fftSize = 64` — 32 frequency bins, enough for smooth animation
+- `smoothingTimeConstant = 0.8` — smooths the ring pulse (not jittery)
+- `baseSpread = 8px`, `maxSpread = 35px` — range of ring thickness
+- `baseOpacity = 0.2`, `maxOpacity = 0.8` — range of ring opacity
+- Color: `rgba(239, 68, 68)` — matches the existing `--record` color (red)
+
+**Pattern: Direct DOM in RAF loop**
+```ts
+const updateRing = () => {
+  analyser.getByteFrequencyData(dataArray);
+  const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+  const level = avg / 255;
+  if (buttonRef.current) {
+    const spread = 8 + level * 35;
+    const opacity = 0.2 + level * 0.6;
+    buttonRef.current.style.boxShadow = `0 0 ${spread}px rgba(239, 68, 68, ${opacity})`;
+  }
+  rafIdRef.current = requestAnimationFrame(updateRing);
+};
+```
+
+**Gotchas:**
+- `AudioContext` may be suspended until user gesture — but `getUserMedia` prompt counts as a gesture
+- `webkitAudioContext` fallback needed for older Safari
+- `cancelAnimationFrame` must be called in cleanup — prevents memory leaks
+- `buttonRef.current.style.boxShadow` is reset to `""` on stop — removes the ring
+- Cleanup on unmount via `useEffect` return function — prevents stale refs
+- No React state updates in the RAF loop — direct DOM manipulation only for 60fps

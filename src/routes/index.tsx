@@ -257,6 +257,17 @@ function RecordScreen() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const rafIdRef = useRef<number>(0);
+
+  useEffect(() => {
+    return () => {
+      stopAudioAnalyser();
+    };
+  }, []);
 
   useEffect(() => {
     if (phase !== "recording") {
@@ -270,6 +281,51 @@ function RecordScreen() {
     };
   }, [phase]);
 
+  const startAudioAnalyser = (stream: MediaStream) => {
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new AudioCtx();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 64;
+    analyser.smoothingTimeConstant = 0.8;
+
+    const source = ctx.createMediaStreamSource(stream);
+    source.connect(analyser);
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    audioContextRef.current = ctx;
+    analyserRef.current = analyser;
+    dataArrayRef.current = dataArray;
+
+    const updateRing = () => {
+      analyser.getByteFrequencyData(dataArray);
+      const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+      const level = avg / 255;
+
+      if (buttonRef.current) {
+        const baseSpread = 8;
+        const maxSpread = 35;
+        const spread = baseSpread + level * maxSpread;
+        const opacity = 0.2 + level * 0.6;
+        buttonRef.current.style.boxShadow =
+          `0 0 ${spread}px rgba(239, 68, 68, ${opacity})`;
+      }
+      rafIdRef.current = requestAnimationFrame(updateRing);
+    };
+
+    rafIdRef.current = requestAnimationFrame(updateRing);
+  };
+
+  const stopAudioAnalyser = () => {
+    cancelAnimationFrame(rafIdRef.current);
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+    dataArrayRef.current = null;
+  };
+
   const startRecording = async () => {
     if (navigator.vibrate) navigator.vibrate(40);
     setLiveTranscript("");
@@ -279,6 +335,10 @@ function RecordScreen() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+
+      // Start audio analyser for ring animation
+      startAudioAnalyser(stream);
+
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
@@ -321,6 +381,14 @@ function RecordScreen() {
 
   const stopRecording = () => {
     if (navigator.vibrate) navigator.vibrate([20, 60, 20]);
+
+    // Stop audio analyser
+    stopAudioAnalyser();
+
+    // Reset button shadow
+    if (buttonRef.current) {
+      buttonRef.current.style.boxShadow = "";
+    }
 
     // Stop MediaRecorder
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
@@ -564,11 +632,12 @@ function RecordScreen() {
 
         <div className="flex flex-col items-center gap-5">
           <button
+            ref={buttonRef}
             type="button"
             onClick={recording ? stopRecording : startRecording}
             disabled={processing}
             className={`flex size-56 flex-col items-center justify-center gap-2 rounded-full text-record-foreground transition-transform active:scale-95 ${
-              recording ? "record-pulse bg-record" : "bg-record"
+              recording ? "bg-record" : "bg-record"
             } ${processing ? "opacity-60" : ""}`}
           >
             {recording ? <Square className="size-16" /> : <Mic className="size-20" />}
