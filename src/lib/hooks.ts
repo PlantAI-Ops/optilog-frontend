@@ -158,7 +158,7 @@ export function usePlantSummary(plantId: string | undefined, date: string) {
 export function usePlant(plantId: string | undefined) {
   return useQuery({
     queryKey: ["plant", plantId],
-    queryFn: () => api.get<Plant>(`/api/v1/assets/plants/${plantId}`),
+    queryFn: () => api.get<Plant>(`/assets/plants/${plantId}`),
     enabled: !!plantId,
     staleTime: 300_000,
   });
