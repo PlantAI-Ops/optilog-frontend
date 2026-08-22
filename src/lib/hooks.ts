@@ -399,13 +399,7 @@ export interface CarriedOverIssue {
 }
 
 export interface CarriedOverResponse {
-  previous_shift: {
-    shift_id: string;
-    name: string;
-    date: string;
-  } | null;
-  open_issues: CarriedOverIssue[];
-  total_count: number;
+  issues: string[];
 }
 
 export function useCarriedOver(
@@ -440,20 +434,61 @@ export interface TranscribeResult {
     event_type?: string;
     observation?: string;
     reported_cause?: string;
+    suspected_cause?: string;
+    verified_cause?: string;
+    action_taken?: string;
     severity?: string;
+    status?: string;
     asset_name?: string;
+    subsystem?: string;
     duration_seconds?: number;
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/*                          my-events (shift-log)                             */
+/* -------------------------------------------------------------------------- */
+
+export interface MyEvent {
+  id: string;
+  timestamp: string;
+  event_type: string;
+  asset_name: string;
+  subsystem: string;
+  observation: string;
+  reported_cause: string;
+  suspected_cause: string;
+  verified_cause: string;
+  action_taken: string;
+  severity: string;
+  status: string;
+  duration_seconds: number | null;
+  transcript: string;
+  source: string;
+  logged_by: string;
+  recording_id: string | null;
+}
+
+export function useMyEvents(plantId: string | undefined, date: string) {
+  return useQuery({
+    queryKey: ["my-events", plantId, date],
+    queryFn: () => api.get<MyEvent[]>(`/plants/${plantId}/my-events?date=${date}`),
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
 }
 
 export async function transcribeAudio(
   audioBlob: Blob,
   plantId?: string,
   shiftId?: string,
+  browserTranscript?: string,
 ): Promise<TranscribeResult> {
   const formData = new FormData();
-  formData.append("file", audioBlob, "recording.webm");
+  const ext = audioBlob.type.includes("ogg") ? "ogg" : "webm";
+  formData.append("file", audioBlob, `recording.${ext}`);
   if (plantId) formData.append("plant_id", plantId);
   if (shiftId) formData.append("shift_id", shiftId);
+  if (browserTranscript) formData.append("browser_transcript", browserTranscript);
   return postFormData<TranscribeResult>("/recordings/speech-to-text", formData);
 }

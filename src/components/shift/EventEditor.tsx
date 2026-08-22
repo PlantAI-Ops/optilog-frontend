@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { EventStatus, ShiftEvent } from "@/lib/shift-log";
 import { STATUS_LABEL } from "@/lib/shift-log";
 
-const STATUSES: EventStatus[] = ["resolved", "unresolved", "under_review"];
+const STATUSES: EventStatus[] = ["draft", "confirmed", "investigating", "resolved"];
 
 function Field({
   label,
@@ -25,7 +25,7 @@ function Field({
         rows={2}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full resize-none rounded-xl border border-input bg-secondary px-3 py-3 text-base text-foreground outline-none focus:border-ring"
+        className="mt-1 max-h-40 w-full resize-none overflow-y-auto rounded-xl border border-input bg-secondary px-3 py-3 text-base text-foreground outline-none focus:border-ring"
       />
     </label>
   );
@@ -46,7 +46,7 @@ export function EventEditor({
   const set = (patch: Partial<ShiftEvent>) => setDraft((d) => ({ ...d, ...patch }));
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-1 flex-col gap-4 overflow-y-auto">
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
           <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -100,6 +100,11 @@ export function EventEditor({
         onChange={(v) => set({ reported_cause: v })}
       />
       <Field
+        label="Suspected cause"
+        value={draft.suspected_cause}
+        onChange={(v) => set({ suspected_cause: v })}
+      />
+      <Field
         label="Verified cause"
         value={draft.verified_cause}
         onChange={(v) => set({ verified_cause: v })}
@@ -111,7 +116,7 @@ export function EventEditor({
         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
           Status
         </span>
-        <div className="mt-2 grid grid-cols-3 gap-2">
+        <div className="mt-2 grid grid-cols-2 gap-2">
           {STATUSES.map((s) => (
             <button
               key={s}
@@ -128,6 +133,15 @@ export function EventEditor({
           ))}
         </div>
       </div>
+
+      {draft.transcript ? (
+        <div className="max-h-32 overflow-y-auto rounded-xl bg-secondary p-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Transcript
+          </p>
+          <p className="mt-1 text-sm italic leading-snug break-words">"{draft.transcript}"</p>
+        </div>
+      ) : null}
 
       <div className="flex gap-3 pt-1">
         <button

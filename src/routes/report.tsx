@@ -45,11 +45,11 @@ function ReportPage() {
             {unresolvedCount(state)} unresolved
           </p>
           {state.handover ? (
-            <div className="mt-4 rounded-xl bg-secondary p-3">
+            <div className="mt-4 max-h-40 overflow-y-auto rounded-xl bg-secondary p-3">
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Handover note
               </p>
-              <p className="mt-1 text-base leading-snug">{state.handover}</p>
+              <p className="mt-1 text-base leading-snug break-words">{state.handover}</p>
             </div>
           ) : null}
           <p

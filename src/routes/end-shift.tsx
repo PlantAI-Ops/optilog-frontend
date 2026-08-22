@@ -57,7 +57,7 @@ function EndShiftPage() {
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Handover note…"
-            className="mt-2 w-full resize-none rounded-2xl border border-input bg-secondary p-4 text-base outline-none focus:border-ring"
+            className="mt-2 max-h-40 w-full resize-none overflow-y-auto rounded-2xl border border-input bg-secondary p-4 text-base outline-none focus:border-ring"
           />
           <button
             type="button"
@@ -71,7 +71,7 @@ function EndShiftPage() {
         </div>
 
         {state.error ? (
-          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive">
+          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive break-words">
             {state.error}
           </div>
         ) : null}

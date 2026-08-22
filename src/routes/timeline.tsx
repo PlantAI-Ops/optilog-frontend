@@ -1,13 +1,14 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { ChevronDown, CircleCheck, CircleDot, CircleAlert, Loader2, Pencil, Play } from "lucide-react";
+import { ChevronDown, CircleCheck, CircleDot, Loader2, Pencil, Play } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { EventEditor } from "@/components/shift/EventEditor";
-import { useEventAudio } from "@/lib/hooks";
+import { useEventAudio, useMyEvents } from "@/lib/hooks";
 import {
   STATUS_LABEL,
   formatTime,
   hasMinRole,
+  mergeEvents,
   updateEvent,
   useShiftLog,
   type ShiftEvent,
@@ -33,8 +34,9 @@ export const Route = createFileRoute("/timeline")({
 
 function statusIcon(status: ShiftEvent["status"]) {
   if (status === "resolved") return <CircleCheck className="size-5 text-success" />;
-  if (status === "unresolved") return <CircleAlert className="size-5 text-destructive" />;
-  return <CircleDot className="size-5 text-warning" />;
+  if (status === "investigating") return <CircleDot className="size-5 text-warning" />;
+  if (status === "confirmed") return <CircleDot className="size-5 text-primary" />;
+  return <CircleDot className="size-5 text-muted-foreground" />;
 }
 
 function TimelinePage() {
@@ -42,6 +44,16 @@ function TimelinePage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
+
+  const plantId = state.user?.plant_ids?.[0];
+  const today = new Date().toISOString().slice(0, 10);
+  const myEvents = useMyEvents(plantId, today);
+
+  useEffect(() => {
+    if (myEvents.data) {
+      mergeEvents(myEvents.data);
+    }
+  }, [myEvents.data]);
 
   const editing = state.events.find((e) => e.id === editId);
   if (editing) {
@@ -61,7 +73,7 @@ function TimelinePage() {
 
   return (
     <AppShell title={`${state.shiftName} · ${state.line}`}>
-      <div className="flex flex-1 flex-col gap-3">
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-black">Shift timeline</h1>
           <span className="text-sm font-bold text-muted-foreground">
@@ -111,15 +123,18 @@ function TimelinePage() {
                   {event.subsystem ? <Detail label="Subsystem" value={event.subsystem} /> : null}
                   <Detail label="Observation" value={event.observation || "—"} />
                   <Detail label="Reported cause" value={event.reported_cause || "—"} />
+                  {event.suspected_cause ? (
+                    <Detail label="Suspected cause" value={event.suspected_cause} />
+                  ) : null}
                   <Detail label="Verified cause" value={event.verified_cause || "Not verified"} />
                   <Detail label="Action taken" value={event.action_taken || "—"} />
                   <Detail label="Logged by" value={`${event.logged_by} · ${event.source}`} />
                   {event.transcript ? (
-                    <div className="rounded-xl bg-secondary p-3">
+                    <div className="max-h-48 overflow-y-auto rounded-xl bg-secondary p-3">
                       <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                         Original transcript
                       </p>
-                      <p className="mt-1 text-base italic leading-snug">"{event.transcript}"</p>
+                      <p className="mt-1 text-base italic leading-snug break-words">"{event.transcript}"</p>
                       {event.recording_id ? (
                         <PlayAudioButton
                           shiftId={state.shiftId ?? undefined}
@@ -210,7 +225,7 @@ function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className="text-base leading-snug">{value}</p>
+      <p className="text-base leading-snug break-words">{value}</p>
     </div>
   );
 }

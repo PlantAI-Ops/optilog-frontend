@@ -10,6 +10,7 @@ import {
   blankEvent,
   login,
   setState,
+  type EventStatus,
   unresolvedCount,
   useShiftLog,
   type ShiftEvent,
@@ -66,7 +67,7 @@ function LoginScreen() {
           </p>
         </div>
         {state.error ? (
-          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive">
+          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive break-words">
             {state.error}
           </div>
         ) : null}
@@ -123,7 +124,7 @@ function StartShiftScreen() {
   const [selectedLineId, setSelectedLineId] = useState<string>("");
 
   const carriedOver = useCarriedOver(plantId, shift?.shift_type, today);
-  const issues = carriedOver.data?.open_issues ?? [];
+  const issues = carriedOver.data?.issues ?? [];
 
   const selectedLine = lines.find((l) => l.id === selectedLineId);
 
@@ -138,7 +139,7 @@ function StartShiftScreen() {
       shiftType: shift.shift_type,
       lineId: selectedLineId,
       line: selectedLine?.name ?? "Line",
-      carriedOver: issues.map((i) => `${i.title} (${i.severity})`),
+      carriedOver: issues,
     });
   };
 
@@ -175,18 +176,24 @@ function StartShiftScreen() {
                 <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Production area
                 </span>
-                <select
-                  value={selectedLineId}
-                  onChange={(e) => setSelectedLineId(e.target.value)}
-                  className="mt-1 h-14 w-full rounded-2xl border border-input bg-secondary px-4 text-lg font-bold outline-none focus:border-ring"
-                >
-                  <option value="">Select line…</option>
-                  {lines.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
+                {lines.length > 0 ? (
+                  <select
+                    value={selectedLineId}
+                    onChange={(e) => setSelectedLineId(e.target.value)}
+                    className="mt-1 h-14 w-full rounded-2xl border border-input bg-secondary px-4 text-lg font-bold outline-none focus:border-ring"
+                  >
+                    <option value="">Select line…</option>
+                    {lines.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    No production areas configured for your plant.
+                  </p>
+                )}
               </label>
 
               <div className="flex justify-between pt-1">
@@ -194,28 +201,43 @@ function StartShiftScreen() {
                 <dd className="font-bold capitalize">{state.user?.role?.replace(/_/g, " ")}</dd>
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="rounded-2xl border border-border bg-card p-6 text-center">
+              <p className="text-lg font-bold text-muted-foreground">No active shift for today</p>
+              <p className="mt-2 text-base text-muted-foreground">
+                Contact your shift supervisor to schedule a shift before logging events.
+              </p>
+            </div>
+          )}
 
           {state.error ? (
-            <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive">
+            <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive break-words">
               {state.error}
             </div>
           ) : null}
 
-          {issues.length > 0 ? (
-            <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4">
-              <p className="flex items-center gap-2 text-base font-bold text-warning">
-                <AlertTriangle className="size-5" />
-                Previous shift: {issues.length} unresolved issues
-              </p>
-              <ul className="mt-3 space-y-2 text-base text-foreground">
-                {issues.map((issue) => (
-                  <li key={issue.id} className="leading-snug">
-                    • {issue.title} — {issue.line_name}
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {selectedLineId ? (
+            carriedOver.isLoading ? null : issues.length > 0 ? (
+              <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4">
+                <p className="flex items-center gap-2 text-base font-bold text-warning">
+                  <AlertTriangle className="size-5" />
+                  Previous shift: {issues.length} unresolved issues
+                </p>
+                <ul className="mt-3 space-y-2 text-base text-foreground">
+                  {issues.map((issue, i) => (
+                    <li key={i} className="leading-snug break-words">
+                      • {issue}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : !carriedOver.isLoading && carriedOver.isSuccess ? (
+              <div className="rounded-2xl border border-border bg-card p-4 text-center">
+                <p className="text-base font-medium text-muted-foreground">
+                  No carryover issues from previous shift
+                </p>
+              </div>
+            ) : null
           ) : null}
         </div>
         <button
@@ -244,6 +266,7 @@ function RecordScreen() {
   const [clarifyValue, setClarifyValue] = useState("");
   const [liveTranscript, setLiveTranscript] = useState("");
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [micBlocked, setMicBlocked] = useState(false);
   const timerRef = useRef<number | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -254,6 +277,7 @@ function RecordScreen() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const dataArrayRef = useRef<Uint8Array | null>(null);
   const rafIdRef = useRef<number>(0);
+  const finalTranscriptRef = useRef("");
 
   useEffect(() => {
     return () => {
@@ -323,6 +347,7 @@ function RecordScreen() {
     setLiveTranscript("");
     setAudioBlob(null);
     audioChunksRef.current = [];
+    finalTranscriptRef.current = "";
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -335,10 +360,67 @@ function RecordScreen() {
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
+      mediaRecorder.onstop = () => {
+        const chunks = audioChunksRef.current;
+        const blob =
+          chunks.length > 0 ? new Blob(chunks, { type: mediaRecorder.mimeType }) : null;
+
+        const browserTranscript = finalTranscriptRef.current || liveTranscript;
+
+        if (blob) {
+          setAudioBlob(blob);
+          transcribeAudio(blob, plantId, state.shiftId ?? undefined, browserTranscript)
+            .then((result) => {
+              const event: ShiftEvent = {
+                ...blankEvent(state.user?.name ?? "Operator"),
+                event_type: result.structured_event.event_type ?? "",
+                asset: result.structured_event.asset_name ?? state.line,
+                subsystem: result.structured_event.subsystem ?? "",
+                observation: result.structured_event.observation ?? "",
+                reported_cause: result.structured_event.reported_cause ?? "",
+                suspected_cause: result.structured_event.suspected_cause ?? "",
+                verified_cause: result.structured_event.verified_cause ?? "",
+                action_taken: result.structured_event.action_taken ?? "",
+                severity: result.structured_event.severity ?? "",
+                status: (result.structured_event.status as EventStatus) || "draft",
+                duration_minutes: result.structured_event.duration_seconds
+                  ? Math.round(result.structured_event.duration_seconds / 60)
+                  : null,
+                transcript: browserTranscript,
+                source: "voice",
+              };
+              setDraft(event);
+              setPhase("confirm");
+            })
+            .catch((err) => {
+              console.error("Transcription failed:", err);
+              const event: ShiftEvent = {
+                ...blankEvent(state.user?.name ?? "Operator"),
+                transcript: browserTranscript,
+                source: "voice",
+              };
+              setDraft(event);
+              setPhase("confirm");
+            });
+        } else {
+          const event: ShiftEvent = {
+            ...blankEvent(state.user?.name ?? "Operator"),
+            transcript: browserTranscript,
+            source: "voice",
+          };
+          setDraft(event);
+          setPhase("confirm");
+        }
+      };
       mediaRecorder.start();
       mediaRecorderRef.current = mediaRecorder;
-    } catch {
-      // Microphone access denied — still allow manual entry
+    } catch (err) {
+      console.error("Microphone access failed:", err);
+      setMicBlocked(true);
+      setState({
+        error: "Microphone access denied. Allow mic access in your browser settings, then try again.",
+      });
+      return;
     }
 
     // Web Speech API for live preview
@@ -350,16 +432,18 @@ function RecordScreen() {
       recognition.lang = "en-US";
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         let interim = "";
-        let final = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const text = event.results[i]![0]!.transcript;
           if (event.results[i]!.isFinal) {
-            final += text;
+            finalTranscriptRef.current +=
+              (finalTranscriptRef.current ? " " : "") + text;
           } else {
             interim += text;
           }
         }
-        setLiveTranscript(final + interim);
+        setLiveTranscript(
+          finalTranscriptRef.current + (interim ? " " + interim : ""),
+        );
       };
       recognition.onerror = () => {
         // Speech recognition error — silently continue
@@ -374,15 +458,14 @@ function RecordScreen() {
   const stopRecording = () => {
     if (navigator.vibrate) navigator.vibrate([20, 60, 20]);
 
-    // Stop audio analyser
     stopAudioAnalyser();
 
-    // Reset button shadow
     if (buttonRef.current) {
       buttonRef.current.style.boxShadow = "";
     }
 
-    // Stop MediaRecorder
+    setPhase("processing");
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
     }
@@ -390,60 +473,9 @@ function RecordScreen() {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-
-    // Stop Web Speech API
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;
-    }
-
-    setPhase("processing");
-
-    // Build audio blob from chunks
-    const blob =
-      audioChunksRef.current.length > 0
-        ? new Blob(audioChunksRef.current, { type: "audio/webm" })
-        : null;
-
-    if (blob) {
-      setAudioBlob(blob);
-      // Send to backend for accurate transcription
-      transcribeAudio(blob, plantId, state.shiftId ?? undefined)
-        .then((result) => {
-          const event: ShiftEvent = {
-            ...blankEvent(state.user?.name ?? "Operator"),
-            event_type: result.structured_event.event_type ?? "Downtime",
-            asset: result.structured_event.asset_name ?? state.line,
-            observation: result.structured_event.observation ?? "",
-            reported_cause: result.structured_event.reported_cause ?? "",
-            duration_minutes: result.structured_event.duration_seconds
-              ? Math.round(result.structured_event.duration_seconds / 60)
-              : null,
-            transcript: result.transcript,
-            source: "voice",
-          };
-          setDraft(event);
-          setPhase("confirm");
-        })
-        .catch(() => {
-          // Backend failed — fall back to Web Speech preview
-          const event: ShiftEvent = {
-            ...blankEvent(state.user?.name ?? "Operator"),
-            transcript: liveTranscript || "",
-            source: "voice",
-          };
-          setDraft(event);
-          setPhase("confirm");
-        });
-    } else {
-      // No audio recorded — use Web Speech preview only
-      const event: ShiftEvent = {
-        ...blankEvent(state.user?.name ?? "Operator"),
-        transcript: liveTranscript || "",
-        source: "voice",
-      };
-      setDraft(event);
-      setPhase("confirm");
     }
   };
 
@@ -467,7 +499,7 @@ function RecordScreen() {
 
   const confirmDraft = () => {
     if (!draft) return;
-    if (draft.duration_minutes === null && draft.status !== "unresolved") {
+    if (draft.duration_minutes === null && draft.status === "draft") {
       setClarifyValue("");
       setPhase("clarify");
       return;
@@ -540,11 +572,17 @@ function RecordScreen() {
 
   if (phase === "confirm" && draft) {
     return (
-      <AppShell title="Check this is right">
-        <div className="flex flex-1 flex-col gap-5">
+      <AppShell
+        title="Check this is right"
+        onBack={() => {
+          setDraft(null);
+          setPhase("idle");
+        }}
+      >
+        <div className="flex flex-1 flex-col gap-5 overflow-y-auto">
           <p className="text-lg font-bold text-muted-foreground">I captured:</p>
           <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
-            <p className="text-2xl font-black leading-tight">
+            <p className="text-2xl font-black leading-tight break-words">
               {draft.asset} — {draft.event_type}
             </p>
             <CardLine
@@ -563,18 +601,24 @@ function RecordScreen() {
             {draft.reported_cause ? (
               <CardLine label="Reported cause" value={draft.reported_cause} />
             ) : null}
+            {draft.suspected_cause ? (
+              <CardLine label="Suspected cause" value={draft.suspected_cause} />
+            ) : null}
             {draft.verified_cause ? (
               <CardLine label="Verified cause" value={draft.verified_cause} />
             ) : null}
             {draft.action_taken ? (
               <CardLine label="Action taken" value={draft.action_taken} />
             ) : null}
+            {draft.severity ? (
+              <CardLine label="Severity" value={draft.severity} />
+            ) : null}
             {draft.transcript ? (
-              <div className="rounded-xl bg-secondary p-3">
+              <div className="max-h-48 overflow-y-auto rounded-xl bg-secondary p-3">
                 <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Transcript
                 </p>
-                <p className="mt-1 text-base italic leading-snug">"{draft.transcript}"</p>
+                <p className="mt-1 text-base italic leading-snug break-words">"{draft.transcript}"</p>
               </div>
             ) : null}
           </div>
@@ -586,25 +630,13 @@ function RecordScreen() {
             >
               <Check className="size-7" /> Confirm
             </button>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setPhase("edit")}
-                className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl border border-border bg-secondary font-bold"
-              >
-                <Pencil className="size-5" /> Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft(null);
-                  setPhase("recording");
-                }}
-                className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl border border-border bg-secondary font-bold"
-              >
-                <Mic className="size-5" /> Re-record
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setPhase("edit")}
+              className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-secondary font-bold"
+            >
+              <Pencil className="size-5" /> Edit
+            </button>
           </div>
         </div>
       </AppShell>
@@ -619,18 +651,26 @@ function RecordScreen() {
       <div className="flex flex-1 flex-col items-center justify-between gap-6 py-2">
         <div className="grid w-full grid-cols-2 gap-3">
           <Stat value={state.events.length} label="events recorded" />
-          <Stat value={unresolvedCount(state)} label="unresolved" warn />
+          <Stat value={unresolvedCount(state)} label="open" warn />
         </div>
+
+        {micBlocked ? (
+          <div className="w-full rounded-2xl border border-warning/40 bg-warning/10 p-4">
+            <p className="text-base font-medium text-warning break-words">
+              Microphone not available. Use Manual entry below to log events, or allow mic access and refresh.
+            </p>
+          </div>
+        ) : null}
 
         <div className="flex flex-col items-center gap-5">
           <button
             ref={buttonRef}
             type="button"
             onClick={recording ? stopRecording : startRecording}
-            disabled={processing}
+            disabled={processing || micBlocked}
             className={`flex size-56 flex-col items-center justify-center gap-2 rounded-full text-record-foreground transition-transform active:scale-95 ${
               recording ? "bg-record" : "bg-record"
-            } ${processing ? "opacity-60" : ""}`}
+            } ${processing || micBlocked ? "opacity-40" : ""}`}
           >
             {recording ? <Square className="size-16" /> : <Mic className="size-20" />}
             <span className="text-2xl font-black tracking-wide">
@@ -642,14 +682,16 @@ function RecordScreen() {
               ? `Listening — ${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
               : processing
                 ? "Transcribing…"
-                : "Tap once, speak one event."}
+                : micBlocked
+                  ? "Use Manual entry below to log events"
+                  : "Tap once, speak one event."}
           </p>
           {recording && liveTranscript ? (
-            <div className="w-full rounded-xl bg-secondary p-3">
+            <div className="max-h-32 w-full overflow-y-auto rounded-xl bg-secondary p-3">
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Live preview
               </p>
-              <p className="mt-1 text-sm italic leading-snug">"{liveTranscript}"</p>
+              <p className="mt-1 text-sm italic leading-snug break-words">"{liveTranscript}"</p>
             </div>
           ) : null}
           {recording ? (
@@ -713,7 +755,7 @@ function CardLine({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className="text-lg leading-snug">{value}</p>
+      <p className="text-lg leading-snug break-words">{value}</p>
     </div>
   );
 }

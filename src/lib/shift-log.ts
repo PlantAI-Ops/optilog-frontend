@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { api, clearToken, getToken, setRefreshToken, setToken } from "./api";
+import type { MyEvent } from "./hooks";
 
 /* -------------------------------------------------------------------------- */
 /*                                   types                                    */
@@ -14,7 +15,7 @@ export type Role =
   | "integration_admin"
   | "system_admin";
 
-export type EventStatus = "resolved" | "unresolved" | "under_review";
+export type EventStatus = "draft" | "confirmed" | "investigating" | "resolved";
 export type SyncState = "pending" | "synced";
 
 export interface ShiftEvent {
@@ -26,8 +27,10 @@ export interface ShiftEvent {
   duration_minutes: number | null;
   observation: string;
   reported_cause: string;
+  suspected_cause: string;
   verified_cause: string;
   action_taken: string;
+  severity: string;
   status: EventStatus;
   source: "voice" | "manual";
   confidence: number;
@@ -255,7 +258,7 @@ export async function endShift(handover: string): Promise<void> {
       handover: {
         summary: handover || "Shift completed",
         open_items: state.events
-          .filter((e) => e.status === "unresolved")
+          .filter((e) => e.status !== "resolved")
           .map((e) => ({
             description: e.observation || e.event_type,
             severity: e.event_type === "breakdown" ? "high" : "medium",
@@ -334,7 +337,41 @@ export function pendingCount(s: ShiftState) {
 }
 
 export function unresolvedCount(s: ShiftState) {
-  return s.events.filter((e) => e.status === "unresolved").length;
+  return s.events.filter((e) => e.status !== "resolved").length;
+}
+
+export function mapMyEventToShiftEvent(e: MyEvent): ShiftEvent {
+  return {
+    id: e.id,
+    event_type: e.event_type ?? "",
+    asset: e.asset_name ?? "",
+    subsystem: e.subsystem ?? "",
+    timestamp: e.timestamp,
+    duration_minutes: e.duration_seconds != null ? Math.round(e.duration_seconds / 60) : null,
+    observation: e.observation ?? "",
+    reported_cause: e.reported_cause ?? "",
+    suspected_cause: e.suspected_cause ?? "",
+    verified_cause: e.verified_cause ?? "",
+    action_taken: e.action_taken ?? "",
+    severity: e.severity ?? "",
+    status: (e.status as EventStatus) || "draft",
+    source: e.source === "voice" ? "voice" : "manual",
+    confidence: 1,
+    transcript: e.transcript ?? "",
+    sync: "synced",
+    logged_by: e.logged_by ?? "",
+    ...(e.recording_id ? { recording_id: e.recording_id } : {}),
+  };
+}
+
+export function mergeEvents(serverEvents: MyEvent[]) {
+  const mapped = serverEvents.map(mapMyEventToShiftEvent);
+  setState((s) => {
+    const localIds = new Set(s.events.map((ev) => ev.id));
+    const newEvents = mapped.filter((ev) => !localIds.has(ev.id));
+    if (newEvents.length === 0) return s;
+    return { events: [...s.events, ...newEvents] };
+  });
 }
 
 export function formatTime(iso: string) {
@@ -346,9 +383,10 @@ export function formatTime(iso: string) {
 }
 
 export const STATUS_LABEL: Record<EventStatus, string> = {
+  draft: "Draft",
+  confirmed: "Confirmed",
+  investigating: "Investigating",
   resolved: "Resolved",
-  unresolved: "Unresolved",
-  under_review: "Under review",
 };
 
 export function blankEvent(loggedBy: string): ShiftEvent {
@@ -361,9 +399,11 @@ export function blankEvent(loggedBy: string): ShiftEvent {
     duration_minutes: null,
     observation: "",
     reported_cause: "",
+    suspected_cause: "",
     verified_cause: "",
     action_taken: "",
-    status: "unresolved",
+    severity: "",
+    status: "draft",
     source: "manual",
     confidence: 1,
     transcript: "",

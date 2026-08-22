@@ -558,3 +558,38 @@ const updateRing = () => {
 - `buttonRef.current.style.boxShadow` is reset to `""` on stop — removes the ring
 - Cleanup on unmount via `useEffect` return function — prevents stale refs
 - No React state updates in the RAF loop — direct DOM manipulation only for 60fps
+
+---
+
+## 2026-08-19: StartShiftScreen rewritten for auto-detected shift
+
+**Context:** Backend now auto-detects the current shift based on plant timezone, hour, and day of week. No shift dropdown needed — operator only selects their line.
+
+**Decisions:**
+- Replaced `useShiftOptions(plantId, today)` with `useCurrentShift(plantId)` — returns `current_shift` + `lines`
+- Removed shift dropdown entirely — shift info displayed as read-only text (name, time, team)
+- Kept line dropdown — operator still selects their production line
+- Updated `useCarriedOver` call signature from `(plantId, date, shiftId)` to `(plantId, shiftType, date)` — uses `shift_type` string (e.g., "morning"), not ObjectId
+- `handleStart()` now sets `shiftType` in state alongside `shiftId`, `shiftName`, `lineId`, `line`
+- Carried-over issues are `CarriedOverIssue[]` objects — mapped to strings for `state.carriedOver`
+
+**Pattern: Read-only info card with one dropdown**
+```tsx
+<div className="space-y-3 rounded-2xl border border-border bg-card p-4">
+  <div className="flex justify-between">
+    <dt className="text-muted-foreground">Shift</dt>
+    <dd className="font-bold">{shift.name} ({shift.start}–{shift.end})</dd>
+  </div>
+  <label className="block">
+    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Production area</span>
+    <select ...>{lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
+  </label>
+</div>
+```
+
+**Gotchas:**
+- `useCarriedOver` has `enabled: !!plantId && !!shiftType` — won't fetch until shift is detected
+- `currentShift.data?.current_shift` may be undefined while loading — always check `isLoading` first
+- The old `useShiftOptions` hook was deleted — any remaining references cause `ReferenceError` at runtime
+- `carriedOver.data?.open_issues` is `CarriedOverIssue[]`, not `string[]` — must map for display
+- Backend must implement `GET /plants/{id}/shifts/current` for this to work — frontend provides the spec, backend implements
