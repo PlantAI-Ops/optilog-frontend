@@ -446,6 +446,41 @@ export interface TranscribeResult {
 }
 
 /* -------------------------------------------------------------------------- */
+/*                          shifts-month (calendar)                            */
+/* -------------------------------------------------------------------------- */
+
+export interface ShiftEventSummary {
+  id: string;
+  observation: string;
+  event_type: string;
+  severity: string;
+  status: string;
+  timestamp: string;
+}
+
+export interface ShiftMonthShift {
+  shift_id: string;
+  shift_type: string;
+  team_name: string;
+  event_count: number;
+  events: ShiftEventSummary[];
+}
+
+export interface ShiftDaySummary {
+  date: string;
+  shifts: ShiftMonthShift[];
+}
+
+export function useShiftsMonth(plantId: string | undefined, month: string) {
+  return useQuery({
+    queryKey: ["shifts-month", plantId, month],
+    queryFn: () => api.get<ShiftDaySummary[]>(`/plants/${plantId}/shifts/month?month=${month}`),
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
+}
+
+/* -------------------------------------------------------------------------- */
 /*                          my-events (shift-log)                             */
 /* -------------------------------------------------------------------------- */
 
@@ -475,6 +510,96 @@ export function useMyEvents(plantId: string | undefined, date: string) {
     queryFn: () => api.get<MyEvent[]>(`/plants/${plantId}/my-events?date=${date}`),
     enabled: !!plantId,
     staleTime: STALE_TIME,
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/*                       planned maintenance                                  */
+/* -------------------------------------------------------------------------- */
+
+export interface PlannedMaintenanceItem {
+  event_id: string;
+  shift_id: string;
+  planned_date: string;
+  maintenance_notes: string;
+  assigned_team: string;
+  event_type: string;
+  observation: string;
+  reported_cause: string;
+  suspected_cause: string;
+  severity: string;
+  asset_name: string;
+  line_name: string;
+  shift_name: string;
+  team_name: string;
+  logged_by: string;
+  created_at: string;
+}
+
+export function usePlannedMaintenance(plantId: string | undefined, month: string) {
+  return useQuery({
+    queryKey: ["planned-maintenance", plantId, month],
+    queryFn: () => api.get<PlannedMaintenanceItem[]>(`/plants/${plantId}/planned-maintenance?month=${month}`),
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
+}
+
+export function usePlanMaintenance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shiftId,
+      eventId,
+      plantId,
+      plannedDate,
+      notes,
+      assignedTeam,
+    }: {
+      shiftId: string;
+      eventId: string;
+      plantId: string;
+      plannedDate: string;
+      notes: string;
+      assignedTeam: string;
+    }) =>
+      api.post(`/shifts/${shiftId}/events/${eventId}/plan-maintenance`, {
+        planned_date: plannedDate,
+        notes,
+        assigned_team: assignedTeam,
+      }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["planned-maintenance", variables.plantId] });
+    },
+  });
+}
+
+export function useUpdatePlannedMaintenance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      plantId,
+      eventId,
+      patch,
+    }: {
+      plantId: string;
+      eventId: string;
+      patch: { planned_date?: string; maintenance_notes?: string; status?: string };
+    }) => api.patch(`/plants/${plantId}/planned-maintenance/${eventId}`, patch),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["planned-maintenance", variables.plantId] });
+    },
+  });
+}
+
+export function useCompletePlannedMaintenance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ plantId, eventId }: { plantId: string; eventId: string }) =>
+      api.post(`/plants/${plantId}/planned-maintenance/${eventId}/complete`),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["planned-maintenance", variables.plantId] });
+    },
   });
 }
 

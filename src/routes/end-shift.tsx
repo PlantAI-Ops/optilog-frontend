@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Loader2, Mic } from "lucide-react";
+import { Loader2, Mic, Wrench } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
-import { endShift, hasMinRole, unresolvedCount, useShiftLog } from "@/lib/shift-log";
+import { endShift, hasMinRole, unresolvedCount, useShiftLog, updateEvent } from "@/lib/shift-log";
+import { usePlanMaintenance } from "@/lib/hooks";
 
 export const Route = createFileRoute("/end-shift")({
   head: () => ({
@@ -27,12 +28,52 @@ function EndShiftPage() {
   const state = useShiftLog();
   const navigate = useNavigate();
   const [note, setNote] = useState(state.handover);
+  const [selectedForMaintenance, setSelectedForMaintenance] = useState<Set<string>>(new Set());
+  const [maintenanceDate, setMaintenanceDate] = useState(() => new Date().toISOString().slice(0, 10));
   const unresolved = unresolvedCount(state);
   const resolved = state.events.filter((e) => e.status === "resolved").length;
   const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
+  const planMaintenance = usePlanMaintenance();
+
+  const unresolvedEvents = state.events.filter(
+    (e) => e.status !== "resolved" && e.status !== "planned_maintenance",
+  );
+
+  const toggleEvent = (id: string) => {
+    setSelectedForMaintenance((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   const handleEnd = async () => {
     try {
+      // Push selected events to planned maintenance
+      if (isSupervisor && selectedForMaintenance.size > 0) {
+        const plantId = state.user?.plant_ids?.[0] ?? "";
+        for (const eventId of selectedForMaintenance) {
+          const event = state.events.find((e) => e.id === eventId);
+          if (!event) continue;
+          try {
+            await planMaintenance.mutateAsync({
+              shiftId: state.shiftId ?? "",
+              eventId,
+              plantId,
+              plannedDate: maintenanceDate,
+              notes: "",
+              assignedTeam: "",
+            });
+            updateEvent(eventId, { status: "planned_maintenance" });
+          } catch {
+            // continue with other events
+          }
+        }
+      }
       await endShift(note);
       navigate({ to: "/report" });
     } catch {
@@ -69,6 +110,65 @@ function EndShiftPage() {
             <Mic className="size-5" /> Dictate note
           </button>
         </div>
+
+        {isSupervisor && unresolvedEvents.length > 0 ? (
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <Wrench className="size-5 text-primary" />
+              <p className="text-lg font-bold">Push to planned maintenance?</p>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Select unresolved issues to schedule for the next maintenance window.
+            </p>
+
+            <div className="mt-3 space-y-2">
+              {unresolvedEvents.map((event) => (
+                <label
+                  key={event.id}
+                  className={`flex items-start gap-3 rounded-xl border p-3 transition-colors ${
+                    selectedForMaintenance.has(event.id)
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:bg-secondary/50"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedForMaintenance.has(event.id)}
+                    onChange={() => toggleEvent(event.id)}
+                    className="mt-1 size-4 shrink-0 rounded border-border"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium leading-snug break-words">
+                      {event.observation || event.event_type}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {event.asset} · {event.severity}
+                    </p>
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            {selectedForMaintenance.size > 0 && (
+              <div className="mt-3 flex items-center gap-3">
+                <label className="block flex-1">
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Maintenance date
+                  </span>
+                  <input
+                    type="date"
+                    value={maintenanceDate}
+                    onChange={(e) => setMaintenanceDate(e.target.value)}
+                    className="mt-1 h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm outline-none focus:border-ring"
+                  />
+                </label>
+                <p className="mt-5 text-xs text-muted-foreground">
+                  {selectedForMaintenance.size} issue{selectedForMaintenance.size !== 1 ? "s" : ""} selected
+                </p>
+              </div>
+            )}
+          </div>
+        ) : null}
 
         {state.error ? (
           <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive break-words">

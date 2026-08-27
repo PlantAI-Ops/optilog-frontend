@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { ChevronDown, CircleCheck, CircleDot, Loader2, Pencil, Play } from "lucide-react";
+import { ChevronDown, CircleCheck, CircleDot, Loader2, Pencil, Play, Wrench } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { EventEditor } from "@/components/shift/EventEditor";
-import { useEventAudio, useMyEvents } from "@/lib/hooks";
+import { useEventAudio, useMyEvents, usePlanMaintenance } from "@/lib/hooks";
 import {
   STATUS_LABEL,
   formatTime,
@@ -43,7 +43,11 @@ function TimelinePage() {
   const state = useShiftLog();
   const [openId, setOpenId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
+  const [planMaintenanceId, setPlanMaintenanceId] = useState<string | null>(null);
+  const [planDate, setPlanDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [planNotes, setPlanNotes] = useState("");
   const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
+  const planMaintenance = usePlanMaintenance();
 
   const plantId = state.user?.plant_ids?.[0];
   const today = new Date().toISOString().slice(0, 10);
@@ -152,6 +156,19 @@ function TimelinePage() {
                       <Pencil className="size-5" /> Edit event
                     </button>
                   ) : null}
+                  {isSupervisor && event.status !== "resolved" && event.status !== "planned_maintenance" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlanMaintenanceId(event.id);
+                        setPlanDate(new Date().toISOString().slice(0, 10));
+                        setPlanNotes("");
+                      }}
+                      className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-secondary font-bold"
+                    >
+                      <Wrench className="size-5" /> Plan Maintenance
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -164,6 +181,34 @@ function TimelinePage() {
         >
           Back to recording
         </Link>
+
+        {planMaintenanceId ? (
+          <PlanMaintenanceDialog
+            event={state.events.find((e) => e.id === planMaintenanceId)!}
+            shiftId={state.shiftId ?? ""}
+            plantId={plantId ?? ""}
+            date={planDate}
+            notes={planNotes}
+            onDateChange={setPlanDate}
+            onNotesChange={setPlanNotes}
+            onConfirm={async () => {
+              const event = state.events.find((e) => e.id === planMaintenanceId);
+              if (!event) return;
+              await planMaintenance.mutateAsync({
+                shiftId: state.shiftId ?? "",
+                eventId: planMaintenanceId,
+                plantId: plantId ?? "",
+                plannedDate: planDate,
+                notes: planNotes,
+                assignedTeam: "",
+              });
+              updateEvent(planMaintenanceId, { status: "planned_maintenance" });
+              setPlanMaintenanceId(null);
+            }}
+            onCancel={() => setPlanMaintenanceId(null)}
+            isPending={planMaintenance.isPending}
+          />
+        ) : null}
       </div>
     </AppShell>
   );
@@ -226,6 +271,96 @@ function Detail({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="text-base leading-snug break-words">{value}</p>
+    </div>
+  );
+}
+
+function PlanMaintenanceDialog({
+  event,
+  shiftId,
+  plantId,
+  date,
+  notes,
+  onDateChange,
+  onNotesChange,
+  onConfirm,
+  onCancel,
+  isPending,
+}: {
+  event: ShiftEvent;
+  shiftId: string;
+  plantId: string;
+  date: string;
+  notes: string;
+  onDateChange: (v: string) => void;
+  onNotesChange: (v: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+  isPending: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5">
+        <h3 className="text-lg font-black">Plan Maintenance</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Schedule this issue for the next maintenance window.
+        </p>
+
+        <div className="mt-4 space-y-3">
+          <div className="rounded-xl bg-secondary/50 p-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Issue</p>
+            <p className="mt-1 text-sm font-medium break-words">
+              {event.observation || event.event_type}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {event.asset} · {event.severity}
+            </p>
+          </div>
+
+          <label className="block">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Planned date
+            </span>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => onDateChange(e.target.value)}
+              className="mt-1 h-12 w-full rounded-xl border border-input bg-secondary px-4 text-base outline-none focus:border-ring"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Notes (optional)
+            </span>
+            <textarea
+              value={notes}
+              onChange={(e) => onNotesChange(e.target.value)}
+              rows={2}
+              placeholder="Any notes for the maintenance team..."
+              className="mt-1 w-full resize-none rounded-xl border border-input bg-secondary px-3 py-3 text-base text-foreground outline-none focus:border-ring"
+            />
+          </label>
+        </div>
+
+        <div className="mt-5 flex gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-14 flex-1 rounded-2xl border border-border bg-secondary text-base font-bold text-secondary-foreground"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isPending}
+            className="h-14 flex-[2] rounded-2xl bg-primary text-base font-black text-primary-foreground disabled:opacity-60"
+          >
+            {isPending ? "Planning..." : "Confirm"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

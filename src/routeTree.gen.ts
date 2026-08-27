@@ -15,9 +15,11 @@ import { Route as EndShiftRouteImport } from './routes/end-shift'
 import { Route as ReportRouteImport } from './routes/report'
 import { Route as TimelineRouteImport } from './routes/timeline'
 import { Route as ConsoleIndexRouteImport } from './routes/console/index'
+import { Route as ConsoleCalendarRouteImport } from './routes/console/calendar'
 import { Route as ConsoleDataRouteImport } from './routes/console/data'
 import { Route as ConsoleEventsRouteImport } from './routes/console/events'
 import { Route as ConsoleIntegrationsRouteImport } from './routes/console/integrations'
+import { Route as ConsoleMaintenanceRouteImport } from './routes/console/maintenance'
 import { Route as ConsoleRcaRouteImport } from './routes/console/rca'
 import { Route as ConsoleShiftsRouteImport } from './routes/console/shifts'
 import { Route as ConsoleTeamsRouteImport } from './routes/console/teams'
@@ -52,6 +54,11 @@ const ConsoleIndexRoute = ConsoleIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ConsoleRouteRoute,
 } as any)
+const ConsoleCalendarRoute = ConsoleCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
 const ConsoleDataRoute = ConsoleDataRouteImport.update({
   id: '/data',
   path: '/data',
@@ -65,6 +72,11 @@ const ConsoleEventsRoute = ConsoleEventsRouteImport.update({
 const ConsoleIntegrationsRoute = ConsoleIntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
+const ConsoleMaintenanceRoute = ConsoleMaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
   getParentRoute: () => ConsoleRouteRoute,
 } as any)
 const ConsoleRcaRoute = ConsoleRcaRouteImport.update({
@@ -89,9 +101,11 @@ export interface FileRoutesByFullPath {
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/calendar': typeof ConsoleCalendarRoute
   '/console/data': typeof ConsoleDataRoute
   '/console/events': typeof ConsoleEventsRoute
   '/console/integrations': typeof ConsoleIntegrationsRoute
+  '/console/maintenance': typeof ConsoleMaintenanceRoute
   '/console/rca': typeof ConsoleRcaRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
@@ -102,9 +116,11 @@ export interface FileRoutesByTo {
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/calendar': typeof ConsoleCalendarRoute
   '/console/data': typeof ConsoleDataRoute
   '/console/events': typeof ConsoleEventsRoute
   '/console/integrations': typeof ConsoleIntegrationsRoute
+  '/console/maintenance': typeof ConsoleMaintenanceRoute
   '/console/rca': typeof ConsoleRcaRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
@@ -117,9 +133,11 @@ export interface FileRoutesById {
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/calendar': typeof ConsoleCalendarRoute
   '/console/data': typeof ConsoleDataRoute
   '/console/events': typeof ConsoleEventsRoute
   '/console/integrations': typeof ConsoleIntegrationsRoute
+  '/console/maintenance': typeof ConsoleMaintenanceRoute
   '/console/rca': typeof ConsoleRcaRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
@@ -133,9 +151,11 @@ export interface FileRouteTypes {
     | '/end-shift'
     | '/report'
     | '/timeline'
+    | '/console/calendar'
     | '/console/data'
     | '/console/events'
     | '/console/integrations'
+    | '/console/maintenance'
     | '/console/rca'
     | '/console/shifts'
     | '/console/teams'
@@ -146,9 +166,11 @@ export interface FileRouteTypes {
     | '/end-shift'
     | '/report'
     | '/timeline'
+    | '/console/calendar'
     | '/console/data'
     | '/console/events'
     | '/console/integrations'
+    | '/console/maintenance'
     | '/console/rca'
     | '/console/shifts'
     | '/console/teams'
@@ -160,9 +182,11 @@ export interface FileRouteTypes {
     | '/end-shift'
     | '/report'
     | '/timeline'
+    | '/console/calendar'
     | '/console/data'
     | '/console/events'
     | '/console/integrations'
+    | '/console/maintenance'
     | '/console/rca'
     | '/console/shifts'
     | '/console/teams'
@@ -221,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleIndexRouteImport
       parentRoute: typeof ConsoleRouteRoute
     }
+    '/console/calendar': {
+      id: '/console/calendar'
+      path: '/calendar'
+      fullPath: '/console/calendar'
+      preLoaderRoute: typeof ConsoleCalendarRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
     '/console/data': {
       id: '/console/data'
       path: '/data'
@@ -240,6 +271,13 @@ declare module '@tanstack/react-router' {
       path: '/integrations'
       fullPath: '/console/integrations'
       preLoaderRoute: typeof ConsoleIntegrationsRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
+    '/console/maintenance': {
+      id: '/console/maintenance'
+      path: '/maintenance'
+      fullPath: '/console/maintenance'
+      preLoaderRoute: typeof ConsoleMaintenanceRouteImport
       parentRoute: typeof ConsoleRouteRoute
     }
     '/console/rca': {
@@ -267,9 +305,11 @@ declare module '@tanstack/react-router' {
 }
 
 interface ConsoleRouteRouteChildren {
+  ConsoleCalendarRoute: typeof ConsoleCalendarRoute
   ConsoleDataRoute: typeof ConsoleDataRoute
   ConsoleEventsRoute: typeof ConsoleEventsRoute
   ConsoleIntegrationsRoute: typeof ConsoleIntegrationsRoute
+  ConsoleMaintenanceRoute: typeof ConsoleMaintenanceRoute
   ConsoleRcaRoute: typeof ConsoleRcaRoute
   ConsoleShiftsRoute: typeof ConsoleShiftsRoute
   ConsoleTeamsRoute: typeof ConsoleTeamsRoute
@@ -277,9 +317,11 @@ interface ConsoleRouteRouteChildren {
 }
 
 const ConsoleRouteRouteChildren: ConsoleRouteRouteChildren = {
+  ConsoleCalendarRoute: ConsoleCalendarRoute,
   ConsoleDataRoute: ConsoleDataRoute,
   ConsoleEventsRoute: ConsoleEventsRoute,
   ConsoleIntegrationsRoute: ConsoleIntegrationsRoute,
+  ConsoleMaintenanceRoute: ConsoleMaintenanceRoute,
   ConsoleRcaRoute: ConsoleRcaRoute,
   ConsoleShiftsRoute: ConsoleShiftsRoute,
   ConsoleTeamsRoute: ConsoleTeamsRoute,

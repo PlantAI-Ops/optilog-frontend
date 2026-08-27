@@ -15,7 +15,7 @@ export type Role =
   | "integration_admin"
   | "system_admin";
 
-export type EventStatus = "draft" | "confirmed" | "investigating" | "resolved";
+export type EventStatus = "draft" | "confirmed" | "investigating" | "resolved" | "planned_maintenance";
 export type SyncState = "pending" | "synced";
 
 export interface ShiftEvent {
@@ -387,6 +387,7 @@ export const STATUS_LABEL: Record<EventStatus, string> = {
   confirmed: "Confirmed",
   investigating: "Investigating",
   resolved: "Resolved",
+  planned_maintenance: "Planned maintenance",
 };
 
 export function blankEvent(loggedBy: string): ShiftEvent {

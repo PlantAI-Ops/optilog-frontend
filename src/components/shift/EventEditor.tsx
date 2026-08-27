@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { EventStatus, ShiftEvent } from "@/lib/shift-log";
 import { STATUS_LABEL } from "@/lib/shift-log";
 
-const STATUSES: EventStatus[] = ["draft", "confirmed", "investigating", "resolved"];
+const STATUSES: EventStatus[] = ["draft", "confirmed", "investigating", "resolved", "planned_maintenance"];
 
 function Field({
   label,

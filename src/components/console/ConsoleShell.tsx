@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import {
   Activity,
   CalendarClock,
+  CalendarDays,
   Database,
   Gauge,
   LogOut,
@@ -10,6 +11,7 @@ import {
   Search,
   Smartphone,
   Users,
+  Wrench,
 } from "lucide-react";
 import { usePlant } from "@/lib/hooks";
 import { logout, useShiftLog } from "@/lib/shift-log";
@@ -17,6 +19,8 @@ import { logout, useShiftLog } from "@/lib/shift-log";
 const NAV = [
   { to: "/console", label: "Dashboard", icon: Gauge, exact: true },
   { to: "/console/shifts", label: "Shifts", icon: CalendarClock, exact: false },
+  { to: "/console/calendar", label: "Calendar", icon: CalendarDays, exact: false },
+  { to: "/console/maintenance", label: "Maintenance", icon: Wrench, exact: false },
   { to: "/console/teams", label: "Teams", icon: Users, exact: false },
   { to: "/console/events", label: "Events", icon: Activity, exact: false },
   { to: "/console/rca", label: "RCA", icon: Search, exact: false },
