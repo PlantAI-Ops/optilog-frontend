@@ -3,18 +3,24 @@ import { Link } from "@tanstack/react-router";
 import {
   Activity,
   CalendarClock,
+  CalendarDays,
   Database,
   Gauge,
+  LogOut,
   Plug,
   Search,
   Smartphone,
   Users,
+  Wrench,
 } from "lucide-react";
-import { plant } from "@/lib/ops-model";
+import { usePlant } from "@/lib/hooks";
+import { logout, useShiftLog } from "@/lib/shift-log";
 
 const NAV = [
   { to: "/console", label: "Dashboard", icon: Gauge, exact: true },
   { to: "/console/shifts", label: "Shifts", icon: CalendarClock, exact: false },
+  { to: "/console/calendar", label: "Calendar", icon: CalendarDays, exact: false },
+  { to: "/console/maintenance", label: "Maintenance", icon: Wrench, exact: false },
   { to: "/console/teams", label: "Teams", icon: Users, exact: false },
   { to: "/console/events", label: "Events", icon: Activity, exact: false },
   { to: "/console/rca", label: "RCA", icon: Search, exact: false },
@@ -26,11 +32,17 @@ export function ConsoleShell({
   children,
   title,
   subtitle,
+  plantName,
 }: {
   children: ReactNode;
   title: string;
   subtitle?: string;
+  plantName?: string;
 }) {
+  const user = useShiftLog().user;
+  const plantId = user?.plant_ids?.[0];
+  const plant = usePlant(plantId);
+  const displayName = plantName ?? plant.data?.name ?? "—";
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-border bg-card px-3 py-4 lg:flex">
@@ -69,10 +81,17 @@ export function ConsoleShell({
               {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="rounded-full border border-border px-3 py-1">{plant.name}</span>
+              <span className="rounded-full border border-border px-3 py-1">{displayName}</span>
               <span className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1">
                 <span className="size-2 rounded-full bg-success" /> Data layer live
               </span>
+              <button
+                type="button"
+                onClick={() => { logout(); window.location.href = "/"; }}
+                className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1 hover:bg-secondary/60"
+              >
+                <LogOut className="size-3" /> Sign out
+              </button>
             </div>
           </div>
           <nav className="mt-3 flex gap-1 overflow-x-auto lg:hidden">

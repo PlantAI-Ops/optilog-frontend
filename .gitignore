@@ -21,6 +21,8 @@ dist-ssr
 .dev.vars
 
 # Editor directories and files
+.opencode/*
+!.opencode/skills/
 .vscode/*
 !.vscode/extensions.json
 .idea

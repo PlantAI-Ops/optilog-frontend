@@ -1,16 +1,17 @@
-import { Fragment, useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { Fragment, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Loader2, ShieldPlus } from "lucide-react";
 import { ConsoleShell, SourceBadge } from "@/components/console/ConsoleShell";
-import {
-  SOURCE_LABEL,
-  STATUS_LABEL,
-  assetName,
-  events,
-  lineName,
-  teamName,
-  type EventType,
-  type SourceSystem,
-} from "@/lib/ops-model";
+import { SOURCE_LABEL, STATUS_LABEL } from "@/lib/ops-model";
+import { hasMinRole, useShiftLog } from "@/lib/shift-log";
+import { useCreateRCAFromEvent, useEvents } from "@/lib/hooks";
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+const TYPES = ["all", "downtime", "breakdown", "quality", "maintenance", "safety", "observation", "environmental"] as const;
+const SOURCES = ["all", "operator", "supervisor", "mes", "scada", "cmms", "erp"] as const;
 
 export const Route = createFileRoute("/console/events")({
   head: () => ({
@@ -31,48 +32,54 @@ export const Route = createFileRoute("/console/events")({
   component: EventsPage,
 });
 
-const TYPES: (EventType | "all")[] = [
-  "all",
-  "downtime",
-  "quality",
-  "maintenance",
-  "safety",
-  "observation",
-];
-const SOURCES: (SourceSystem | "all")[] = [
-  "all",
-  "operator",
-  "supervisor",
-  "mes",
-  "scada",
-  "cmms",
-  "erp",
-];
-
 function EventsPage() {
-  const [type, setType] = useState<EventType | "all">("all");
-  const [source, setSource] = useState<SourceSystem | "all">("all");
+  const user = useShiftLog().user;
+  const plantId = user?.plant_ids?.[0];
+  const navigate = useNavigate();
+
+  const [type, setType] = useState<string>("all");
+  const [source, setSource] = useState<string>("all");
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const rows = useMemo(
-    () =>
-      events
-        .filter((e) => (type === "all" ? true : e.event_type === type))
-        .filter((e) => (source === "all" ? true : e.source === source))
-        .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1)),
-    [type, source],
-  );
+  const events = useEvents(plantId, todayStr(), { type, source });
+  const createRCAFromEvent = useCreateRCAFromEvent();
+  const canCreateRCA = hasMinRole(user?.role ?? "operator", "supervisor");
+
+  if (!plantId) {
+    return (
+      <ConsoleShell title="Events" subtitle="Canonical operational event stream — all sources">
+        <p className="text-muted-foreground">No plant is assigned to your account.</p>
+      </ConsoleShell>
+    );
+  }
+
+  if (events.isLoading) {
+    return (
+      <ConsoleShell title="Events" subtitle="Canonical operational event stream — all sources">
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="size-8 animate-spin text-muted-foreground" />
+        </div>
+      </ConsoleShell>
+    );
+  }
+
+  if (events.error) {
+    return (
+      <ConsoleShell title="Events" subtitle="Canonical operational event stream — all sources">
+        <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive">
+          Failed to load events. {events.error.message}
+        </div>
+      </ConsoleShell>
+    );
+  }
+
+  const rows = events.data ?? [];
 
   return (
     <ConsoleShell title="Events" subtitle="Canonical operational event stream — all sources">
       <div className="flex flex-wrap gap-4">
-        <Filter label="Type" values={TYPES} value={type} onChange={(v) => setType(v as EventType | "all")} />
-        <Filter
-          label="Source"
-          values={SOURCES}
-          value={source}
-          onChange={(v) => setSource(v as SourceSystem | "all")}
-        />
+        <Filter label="Type" values={TYPES} value={type} onChange={setType} />
+        <Filter label="Source" values={SOURCES} value={source} onChange={setSource} />
       </div>
 
       <div className="mt-5 overflow-hidden rounded-xl border border-border bg-card">
@@ -99,14 +106,16 @@ function EventsPage() {
                   </td>
                   <td className="px-4 py-3 font-medium">{e.description}</td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {lineName(e.line_id)} · {assetName(e.asset_id)}
+                    {e.line_name} · {e.asset_name}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {e.event_type} / {e.category}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{STATUS_LABEL[e.status]}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {STATUS_LABEL[e.status as keyof typeof STATUS_LABEL] ?? e.status}
+                  </td>
                   <td className="px-4 py-3 text-right">
-                    <SourceBadge>{SOURCE_LABEL[e.source]}</SourceBadge>
+                    <SourceBadge>{SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}</SourceBadge>
                   </td>
                 </tr>
                 {openId === e.id ? (
@@ -120,18 +129,50 @@ function EventsPage() {
                           <Row k="Action" v={e.action} />
                         </dl>
                         <dl className="space-y-2 text-xs">
-                          <Row k="Team" v={teamName(e.team_id)} />
+                          <Row k="Team" v={e.team_name} />
                           <Row k="Severity" v={e.severity} />
-                          <Row k="Source record" v={`${SOURCE_LABEL[e.source]} · ${e.source_record_id}`} />
+                          <Row k="Source record" v={`${SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source} · ${e.source_record_id}`} />
                           <Row k="Evidence" v={e.evidence.join(", ")} />
                           <Row k="Incident" v={e.incident_id ?? ""} />
                         </dl>
                       </div>
+                      {e.event_type === "breakdown" && canCreateRCA && !e.incident_id ? (
+                        <div className="mt-4 border-t border-border/60 pt-3">
+                          <button
+                            type="button"
+                            disabled={createRCAFromEvent.isPending}
+                            onClick={() => {
+                              createRCAFromEvent.mutate(
+                                { eventId: e.id },
+                                {
+                                  onSuccess: () =>
+                                    navigate({ to: "/console/rca" }),
+                                },
+                              );
+                            }}
+                            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+                          >
+                            {createRCAFromEvent.isPending ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : (
+                              <ShieldPlus className="size-3" />
+                            )}
+                            Create RCA
+                          </button>
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 ) : null}
               </Fragment>
             ))}
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                  No events found for the selected filters.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -170,16 +211,36 @@ function Filter({
             key={v}
             type="button"
             onClick={() => onChange(v)}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
               v === value
                 ? "border-primary bg-primary text-primary-foreground"
                 : "border-border text-muted-foreground hover:bg-secondary/60"
             }`}
           >
-            {v}
+            {filterLabel(v)}
           </button>
         ))}
       </div>
     </div>
   );
+}
+
+function filterLabel(v: string): string {
+  if (v === "all") return "All";
+  const labels: Record<string, string> = {
+    operator: "Operator",
+    supervisor: "Supervisor",
+    mes: "MES",
+    scada: "SCADA",
+    cmms: "CMMS",
+    erp: "ERP",
+    downtime: "Downtime",
+    breakdown: "Breakdown",
+    quality: "Quality",
+    maintenance: "Maintenance",
+    safety: "Safety",
+    observation: "Observation",
+    environmental: "Environmental",
+  };
+  return labels[v] ?? v;
 }

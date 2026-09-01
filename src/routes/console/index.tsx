@@ -1,18 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Loader2 } from "lucide-react";
 import { ConsoleShell, StatCard, SourceBadge } from "@/components/console/ConsoleShell";
+import { SOURCE_LABEL } from "@/lib/ops-model";
+import { useShiftLog } from "@/lib/shift-log";
 import {
-  SOURCE_LABEL,
-  achievement,
-  assetRollup,
-  incidents,
-  lineName,
-  plantSummary,
-  teamName,
-  teamSummary,
-  teams,
-  todayEvents,
-  todayShifts,
-} from "@/lib/ops-model";
+  useAssetRollup,
+  useEvents,
+  useIncidents,
+  usePlantSummary,
+  useShifts,
+  useTeamsSummary,
+} from "@/lib/hooks";
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export const Route = createFileRoute("/console/")({
   head: () => ({
@@ -34,16 +36,71 @@ export const Route = createFileRoute("/console/")({
 });
 
 function Dashboard() {
-  const s = plantSummary();
-  const rollup = assetRollup().slice(0, 4);
+  const user = useShiftLog().user;
+  const plantId = user?.plant_ids?.[0];
+  const today = todayStr();
+
+  const summary = usePlantSummary(plantId, today);
+  const shifts = useShifts(plantId, today);
+  const teamsSummary = useTeamsSummary(plantId, today);
+  const events = useEvents(plantId, today, { limit: 5 });
+  const incidents = useIncidents(plantId, "open,in_progress,under_review");
+  const assetRollup = useAssetRollup(plantId, 30);
+
+  const loading =
+    summary.isLoading ||
+    shifts.isLoading ||
+    teamsSummary.isLoading ||
+    events.isLoading ||
+    incidents.isLoading ||
+    assetRollup.isLoading;
+
+  const error =
+    summary.error ||
+    shifts.error ||
+    teamsSummary.error ||
+    events.error ||
+    incidents.error ||
+    assetRollup.error;
+
+  if (!plantId) {
+    return (
+      <ConsoleShell title="Plant dashboard" subtitle="No plant assigned">
+        <p className="text-muted-foreground">No plant is assigned to your account.</p>
+      </ConsoleShell>
+    );
+  }
+
+  if (loading) {
+    return (
+      <ConsoleShell title="Plant dashboard" subtitle="Today — all teams, all shifts">
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="size-8 animate-spin text-muted-foreground" />
+        </div>
+      </ConsoleShell>
+    );
+  }
+
+  if (error) {
+    return (
+      <ConsoleShell title="Plant dashboard" subtitle="Today — all teams, all shifts">
+        <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive">
+          Failed to load dashboard data. {error.message}
+        </div>
+      </ConsoleShell>
+    );
+  }
+
+  const s = summary.data;
+  const rollup = assetRollup.data?.slice(0, 4) ?? [];
 
   return (
     <ConsoleShell title="Plant dashboard" subtitle="Today — all teams, all shifts">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Production achievement" value={`${s.achievement}%`} hint={`${s.produced.toLocaleString()} of ${s.target.toLocaleString()} units`} tone="success" />
-        <StatCard label="Downtime" value={`${s.downtime} min`} hint="Across 3 active lines" tone="warning" />
-        <StatCard label="Active issues" value={s.activeIssues} hint={`${s.unresolved} unresolved`} tone="danger" />
-        <StatCard label="RCA pending" value={s.rcaPending} hint={`${s.quality} quality events today`} />
+        <StatCard label="Production achievement" value={`${s?.achievement ?? 0}%`} hint={`${(s?.produced ?? 0).toLocaleString()} of ${(s?.target ?? 0).toLocaleString()} units`} tone="success" />
+        <StatCard label="Downtime" value={`${s?.downtime ?? 0} min`} hint={`Across ${s?.lineCount ?? 0} active lines`} tone="warning" />
+        <StatCard label="Active issues" value={s?.activeIssues ?? 0} hint={`${s?.unresolved ?? 0} unresolved`} tone="danger" />
+        <StatCard label="RCA pending" value={s?.rcaPending ?? 0} hint={`${s?.quality ?? 0} quality events today`} />
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-3">
@@ -65,13 +122,13 @@ function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {todayShifts.map((shift) => (
+              {shifts.data?.map((shift) => (
                 <tr key={shift.id} className="border-b border-border/60 last:border-0">
                   <td className="px-4 py-3 font-medium">
-                    {teamName(shift.team_id)} / {shift.name}
+                    {shift.team_name} / {shift.name}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{lineName(shift.line_id)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{achievement(shift)}%</td>
+                  <td className="px-4 py-3 text-muted-foreground">{shift.line_name}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{shift.achievement}%</td>
                   <td className="px-4 py-3 text-right tabular-nums text-warning">
                     {shift.downtime_minutes} min
                   </td>
@@ -87,20 +144,17 @@ function Dashboard() {
         <section className="rounded-xl border border-border bg-card p-4">
           <h2 className="text-sm font-semibold">Teams at a glance</h2>
           <ul className="mt-3 space-y-3">
-            {teams.map((team) => {
-              const t = teamSummary(team.id);
-              return (
-                <li key={team.id} className="rounded-lg border border-border p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">{team.name}</p>
-                    <span className="text-sm font-bold tabular-nums">{t.achievement}%</span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {team.supervisor} · {t.events} events · {t.downtime} min down · {t.open} open
-                  </p>
-                </li>
-              );
-            })}
+            {teamsSummary.data?.map((t) => (
+              <li key={t.team_id} className="rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">{t.team_name}</p>
+                  <span className="text-sm font-bold tabular-nums">{t.achievement}%</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t.supervisor} · {t.events} events · {t.downtime} min down · {t.open} open
+                </p>
+              </li>
+            ))}
           </ul>
         </section>
       </div>
@@ -114,15 +168,15 @@ function Dashboard() {
             </Link>
           </header>
           <ul className="divide-y divide-border/60">
-            {todayEvents.slice(0, 5).map((e) => (
+            {events.data?.map((e) => (
               <li key={e.id} className="flex items-start justify-between gap-4 px-4 py-3">
                 <div>
                   <p className="text-sm font-medium">{e.description}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {lineName(e.line_id)} · {e.event_type} / {e.category} · {teamName(e.team_id)}
+                    {e.line_name} · {e.event_type} / {e.category} · {e.team_name}
                   </p>
                 </div>
-                <SourceBadge>{SOURCE_LABEL[e.source]}</SourceBadge>
+                <SourceBadge>{SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}</SourceBadge>
               </li>
             ))}
           </ul>
@@ -136,13 +190,13 @@ function Dashboard() {
             </Link>
           </div>
           <ul className="mt-3 space-y-3">
-            {incidents.map((i) => (
+            {incidents.data?.map((i) => (
               <li key={i.id} className="rounded-lg border border-border p-3">
                 <p className="text-sm font-medium">
                   {i.ref} {i.title}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {lineName(i.line_id)} · {i.duration_minutes} min · owner {i.owner}
+                  {i.line_name} · {i.duration_minutes} min · owner {i.owner}
                 </p>
               </li>
             ))}
@@ -150,9 +204,9 @@ function Dashboard() {
           <h3 className="mt-5 text-sm font-semibold">Worst assets (30 days)</h3>
           <ul className="mt-2 space-y-2 text-xs text-muted-foreground">
             {rollup.map((r) => (
-              <li key={r.asset.id} className="flex justify-between">
-                <span>{r.asset.name}</span>
-                <span className="tabular-nums">{r.downtime} min</span>
+              <li key={r.asset_id} className="flex justify-between">
+                <span>{r.asset_name}</span>
+                <span className="tabular-nums">{r.downtime_minutes} min</span>
               </li>
             ))}
           </ul>

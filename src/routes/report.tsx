@@ -1,7 +1,13 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { BadgeCheck, FileText, Share2 } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
-import { approveReport, formatTime, unresolvedCount, useShiftLog } from "@/lib/shift-log";
+import {
+  approveReport,
+  formatTime,
+  hasMinRole,
+  unresolvedCount,
+  useShiftLog,
+} from "@/lib/shift-log";
 
 export const Route = createFileRoute("/report")({
   head: () => ({
@@ -23,7 +29,7 @@ export const Route = createFileRoute("/report")({
 
 function ReportPage() {
   const state = useShiftLog();
-  const isSupervisor = state.user?.role === "supervisor";
+  const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
 
   return (
     <AppShell title="Shift report">
@@ -39,18 +45,16 @@ function ReportPage() {
             {unresolvedCount(state)} unresolved
           </p>
           {state.handover ? (
-            <div className="mt-4 rounded-xl bg-secondary p-3">
+            <div className="mt-4 max-h-40 overflow-y-auto rounded-xl bg-secondary p-3">
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Handover note
               </p>
-              <p className="mt-1 text-base leading-snug">{state.handover}</p>
+              <p className="mt-1 text-base leading-snug break-words">{state.handover}</p>
             </div>
           ) : null}
           <p
             className={`mt-4 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-black ${
-              state.reportApproved
-                ? "bg-success/20 text-success"
-                : "bg-warning/20 text-warning"
+              state.reportApproved ? "bg-success/20 text-success" : "bg-warning/20 text-warning"
             }`}
           >
             <BadgeCheck className="size-4" />

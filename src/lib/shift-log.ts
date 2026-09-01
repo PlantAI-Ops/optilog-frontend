@@ -1,7 +1,21 @@
 import { useSyncExternalStore } from "react";
+import { api, clearToken, getToken, setRefreshToken, setToken } from "./api";
+import type { MyEvent } from "./hooks";
 
-export type Role = "operator" | "supervisor";
-export type EventStatus = "resolved" | "unresolved" | "under_review";
+/* -------------------------------------------------------------------------- */
+/*                                   types                                    */
+/* -------------------------------------------------------------------------- */
+
+export type Role =
+  | "operator"
+  | "technician"
+  | "supervisor"
+  | "shift_manager"
+  | "plant_manager"
+  | "integration_admin"
+  | "system_admin";
+
+export type EventStatus = "draft" | "confirmed" | "investigating" | "resolved" | "planned_maintenance";
 export type SyncState = "pending" | "synced";
 
 export interface ShiftEvent {
@@ -9,24 +23,39 @@ export interface ShiftEvent {
   event_type: string;
   asset: string;
   subsystem: string;
-  timestamp: string; // ISO
+  timestamp: string;
   duration_minutes: number | null;
   observation: string;
   reported_cause: string;
+  suspected_cause: string;
   verified_cause: string;
   action_taken: string;
+  severity: string;
   status: EventStatus;
   source: "voice" | "manual";
   confidence: number;
   transcript: string;
   sync: SyncState;
   logged_by: string;
+  recording_id?: string;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  tenant_id: string;
+  plant_ids: string[];
 }
 
 export interface ShiftState {
-  user: { name: string; role: Role } | null;
+  user: User | null;
   shiftActive: boolean;
+  shiftId: string | null;
   shiftName: string;
+  shiftType: string | null;
+  lineId: string | null;
   line: string;
   startedAt: string | null;
   endedAt: string | null;
@@ -35,30 +64,56 @@ export interface ShiftState {
   events: ShiftEvent[];
   carriedOver: string[];
   online: boolean;
+  loading: boolean;
+  error: string | null;
 }
+
+/* -------------------------------------------------------------------------- */
+/*                              role hierarchy                                */
+/* -------------------------------------------------------------------------- */
+
+const ROLE_HIERARCHY: Record<Role, number> = {
+  operator: 0,
+  technician: 1,
+  supervisor: 2,
+  shift_manager: 3,
+  plant_manager: 4,
+  integration_admin: 5,
+  system_admin: 6,
+};
+
+export function hasMinRole(userRole: Role, required: Role): boolean {
+  return ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[required];
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  store                                     */
+/* -------------------------------------------------------------------------- */
 
 const STORAGE_KEY = "shiftlog.state.v1";
 
 const initialState: ShiftState = {
   user: null,
   shiftActive: false,
+  shiftId: null,
   shiftName: "Morning",
+  shiftType: null,
+  lineId: null,
   line: "Packaging Line 2",
   startedAt: null,
   endedAt: null,
   handover: "",
   reportApproved: false,
   events: [],
-  carriedOver: [
-    "Abnormal motor noise — Line 3 (unresolved)",
-    "Labeller misfeed — Packaging 2 (unresolved)",
-    "Quality observation SKU-204 (under review)",
-  ],
+  carriedOver: [],
   online: true,
+  loading: false,
+  error: null,
 };
 
 let state: ShiftState = initialState;
 let hydrated = false;
+let syncing = false;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -103,32 +158,138 @@ export function useShiftLog(): ShiftState {
   );
 }
 
-/* ------------------------------ actions ------------------------------ */
+/* -------------------------------------------------------------------------- */
+/*                                  auth                                      */
+/* -------------------------------------------------------------------------- */
 
-export function login(name: string, role: Role) {
-  setState({ user: { name, role } });
+interface LoginResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+}
+
+export async function login(email: string, password: string): Promise<void> {
+  setState({ loading: true, error: null });
+  try {
+    const res = await api.post<LoginResponse>("/auth/login", {
+      email,
+      password,
+    });
+    setToken(res.access_token);
+    setRefreshToken(res.refresh_token);
+    const user = await api.get<User>("/auth/me");
+    setState({ user, loading: false });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Login failed";
+    setState({ error: message, loading: false });
+    throw e;
+  }
+}
+
+export async function restoreSession(): Promise<void> {
+  const token = getToken();
+  if (!token) return;
+  setState({ loading: true });
+  try {
+    const user = await api.get<User>("/auth/me");
+    setState({ user, loading: false });
+  } catch (e: unknown) {
+    clearToken();
+    setState({ user: null, loading: false });
+    if (e instanceof Error && "status" in e && (e as { status: number }).status === 401) {
+      throw e;
+    }
+  }
 }
 
 export function logout() {
-  setState({ user: null });
-}
-
-export function startShift() {
+  clearToken();
   setState({
-    shiftActive: true,
-    startedAt: new Date().toISOString(),
+    user: null,
+    shiftActive: false,
+    shiftId: null,
+    shiftType: null,
+    startedAt: null,
     endedAt: null,
+    events: [],
+    handover: "",
     reportApproved: false,
+    error: null,
   });
 }
 
-export function endShift(handover: string) {
-  setState({ shiftActive: false, endedAt: new Date().toISOString(), handover });
+/* -------------------------------------------------------------------------- */
+/*                              shift actions                                 */
+/* -------------------------------------------------------------------------- */
+
+interface StartShiftResponse {
+  id: string;
+  started_at: string;
 }
 
-export function addEvent(event: ShiftEvent) {
+export async function startShift(): Promise<void> {
+  setState({ loading: true, error: null });
+  try {
+    const res = await api.post<StartShiftResponse>("/shifts/start", {
+      shift_name: state.shiftName,
+      line: state.line,
+    });
+    setState({
+      shiftActive: true,
+      shiftId: res.id,
+      startedAt: res.started_at,
+      endedAt: null,
+      reportApproved: false,
+      loading: false,
+    });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Failed to start shift";
+    setState({ error: message, loading: false });
+    throw e;
+  }
+}
+
+export async function endShift(handover: string): Promise<void> {
+  if (!state.shiftId) return;
+  setState({ loading: true, error: null });
+  try {
+    await api.post(`/shifts/${state.shiftId}/end`, {
+      operator_id: state.user?.id,
+      handover: {
+        summary: handover || "Shift completed",
+        open_items: state.events
+          .filter((e) => e.status !== "resolved")
+          .map((e) => ({
+            description: e.observation || e.event_type,
+            severity: e.event_type === "breakdown" ? "high" : "medium",
+            assigned_to: "next_shift",
+          })),
+      },
+    });
+    setState({
+      shiftActive: false,
+      endedAt: new Date().toISOString(),
+      handover,
+      loading: false,
+    });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Failed to end shift";
+    setState({ error: message, loading: false });
+    throw e;
+  }
+}
+
+export async function addEvent(event: ShiftEvent): Promise<void> {
   setState((s) => ({ events: [...s.events, event] }));
-  if (state.online) syncPending();
+  if (!state.shiftId || !state.online) return;
+  try {
+    await api.post(`/shifts/${state.shiftId}/events`, event);
+    setState((s) => ({
+      events: s.events.map((e) => (e.id === event.id ? { ...e, sync: "synced" as const } : e)),
+    }));
+  } catch {
+    /* will be retried by syncPending */
+  }
 }
 
 export function updateEvent(id: string, patch: Partial<ShiftEvent>) {
@@ -137,19 +298,35 @@ export function updateEvent(id: string, patch: Partial<ShiftEvent>) {
   }));
 }
 
+/* -------------------------------------------------------------------------- */
+/*                                  sync                                      */
+/* -------------------------------------------------------------------------- */
+
 export function setOnline(online: boolean) {
   setState({ online });
   if (online) syncPending();
 }
 
-export function syncPending() {
-  window.setTimeout(() => {
-    if (!state.online) return;
-    setState((s) => ({
-      events: s.events.map((e) => (e.sync === "pending" ? { ...e, sync: "synced" as const } : e)),
-    }));
-  }, 1600);
+export async function syncPending(): Promise<void> {
+  if (syncing || !state.online || !state.shiftId) return;
+  syncing = true;
+  const pending = state.events.filter((e) => e.sync === "pending");
+  for (const event of pending) {
+    try {
+      await api.post(`/shifts/${state.shiftId}/events`, event);
+      setState((s) => ({
+        events: s.events.map((e) => (e.id === event.id ? { ...e, sync: "synced" as const } : e)),
+      }));
+    } catch {
+      /* will retry on next sync */
+    }
+  }
+  syncing = false;
 }
+
+/* -------------------------------------------------------------------------- */
+/*                                helpers                                     */
+/* -------------------------------------------------------------------------- */
 
 export function approveReport() {
   setState({ reportApproved: true });
@@ -160,94 +337,58 @@ export function pendingCount(s: ShiftState) {
 }
 
 export function unresolvedCount(s: ShiftState) {
-  return s.events.filter((e) => e.status === "unresolved").length;
+  return s.events.filter((e) => e.status !== "resolved").length;
+}
+
+export function mapMyEventToShiftEvent(e: MyEvent): ShiftEvent {
+  return {
+    id: e.id,
+    event_type: e.event_type ?? "",
+    asset: e.asset_name ?? "",
+    subsystem: e.subsystem ?? "",
+    timestamp: e.timestamp,
+    duration_minutes: e.duration_seconds != null ? Math.round(e.duration_seconds / 60) : null,
+    observation: e.observation ?? "",
+    reported_cause: e.reported_cause ?? "",
+    suspected_cause: e.suspected_cause ?? "",
+    verified_cause: e.verified_cause ?? "",
+    action_taken: e.action_taken ?? "",
+    severity: e.severity ?? "",
+    status: (e.status as EventStatus) || "draft",
+    source: e.source === "voice" ? "voice" : "manual",
+    confidence: 1,
+    transcript: e.transcript ?? "",
+    sync: "synced",
+    logged_by: e.logged_by ?? "",
+    ...(e.recording_id ? { recording_id: e.recording_id } : {}),
+  };
+}
+
+export function mergeEvents(serverEvents: MyEvent[]) {
+  const mapped = serverEvents.map(mapMyEventToShiftEvent);
+  setState((s) => {
+    const localIds = new Set(s.events.map((ev) => ev.id));
+    const newEvents = mapped.filter((ev) => !localIds.has(ev.id));
+    if (newEvents.length === 0) return s;
+    return { events: [...s.events, ...newEvents] };
+  });
 }
 
 export function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  return new Date(iso).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 export const STATUS_LABEL: Record<EventStatus, string> = {
+  draft: "Draft",
+  confirmed: "Confirmed",
+  investigating: "Investigating",
   resolved: "Resolved",
-  unresolved: "Unresolved",
-  under_review: "Under review",
+  planned_maintenance: "Planned maintenance",
 };
-
-/* ------------------------- simulated structuring ------------------------- */
-
-const SAMPLES: Array<Omit<ShiftEvent, "id" | "timestamp" | "sync" | "logged_by">> = [
-  {
-    event_type: "Conveyor jam",
-    asset: "Packaging Line 2",
-    subsystem: "Infeed conveyor",
-    duration_minutes: 20,
-    observation: "Line stopped, product backed up at infeed.",
-    reported_cause: "Operator reported a jam at the conveyor.",
-    verified_cause: "Maintenance found a misaligned guide rail.",
-    action_taken: "Guide rail realigned, line restarted.",
-    status: "resolved",
-    source: "voice",
-    confidence: 0.91,
-    transcript:
-      "Line 2 stopped around ten fifteen. The conveyor was jammed. Maintenance came and fixed it after about twenty minutes.",
-  },
-  {
-    event_type: "Material shortage",
-    asset: "Packaging Line 2",
-    subsystem: "Carton magazine",
-    duration_minutes: 12,
-    observation: "Cartons ran out, line idled waiting on stores.",
-    reported_cause: "Stores delivery late.",
-    verified_cause: "",
-    action_taken: "Pallet delivered, line resumed.",
-    status: "resolved",
-    source: "voice",
-    confidence: 0.84,
-    transcript: "We ran out of cartons for about twelve minutes waiting on stores.",
-  },
-  {
-    event_type: "Abnormal motor noise",
-    asset: "Line 3",
-    subsystem: "Drive motor",
-    duration_minutes: null,
-    observation: "Grinding noise from the drive motor at high speed.",
-    reported_cause: "Possible bearing wear.",
-    verified_cause: "",
-    action_taken: "Logged for maintenance inspection next shift.",
-    status: "unresolved",
-    source: "voice",
-    confidence: 0.72,
-    transcript: "There's a grinding noise coming off the line three drive motor when it speeds up.",
-  },
-  {
-    event_type: "Quality observation",
-    asset: "Packaging Line 2",
-    subsystem: "Labeller",
-    duration_minutes: null,
-    observation: "Labels skewed on SKU-204, roughly one in twenty packs.",
-    reported_cause: "Label web tension suspected.",
-    verified_cause: "",
-    action_taken: "Samples pulled for QA review.",
-    status: "under_review",
-    source: "voice",
-    confidence: 0.68,
-    transcript: "Labels are going on crooked on SKU two oh four, maybe one in twenty packs.",
-  },
-];
-
-let sampleIndex = 0;
-
-export function structureRecording(loggedBy: string): ShiftEvent {
-  const sample = SAMPLES[sampleIndex % SAMPLES.length]!;
-  sampleIndex += 1;
-  return {
-    ...sample,
-    id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-    timestamp: new Date().toISOString(),
-    sync: "pending",
-    logged_by: loggedBy,
-  };
-}
 
 export function blankEvent(loggedBy: string): ShiftEvent {
   return {
@@ -259,9 +400,11 @@ export function blankEvent(loggedBy: string): ShiftEvent {
     duration_minutes: null,
     observation: "",
     reported_cause: "",
+    suspected_cause: "",
     verified_cause: "",
     action_taken: "",
-    status: "unresolved",
+    severity: "",
+    status: "draft",
     source: "manual",
     confidence: 1,
     transcript: "",
