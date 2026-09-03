@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Loader2, ShieldPlus } from "lucide-react";
 import { ConsoleShell, SourceBadge } from "@/components/console/ConsoleShell";
 import { SOURCE_LABEL, STATUS_LABEL } from "@/lib/ops-model";
+import { ApiError } from "@/lib/api";
 import { hasMinRole, useShiftLog } from "@/lib/shift-log";
 import { useCreateRCAFromEvent, useEvents } from "@/lib/hooks";
 
@@ -16,13 +17,13 @@ const SOURCES = ["all", "operator", "supervisor", "mes", "scada", "cmms", "erp"]
 export const Route = createFileRoute("/console/events")({
   head: () => ({
     meta: [
-      { title: "Operational Event Stream | Shift-Log" },
+      { title: "Operational Event Stream | OptiLog" },
       {
         name: "description",
         content:
           "One canonical event stream merging operator voice reports with MES, SCADA, CMMS and ERP records, filterable by type, source and line.",
       },
-      { property: "og:title", content: "Operational Event Stream | Shift-Log" },
+      { property: "og:title", content: "Operational Event Stream | OptiLog" },
       {
         property: "og:description",
         content: "Operator, MES, SCADA and CMMS records normalised into one model.",
@@ -63,7 +64,7 @@ function EventsPage() {
     );
   }
 
-  if (events.error) {
+  if (events.error && !(events.error instanceof ApiError && events.error.status === 404)) {
     return (
       <ConsoleShell title="Events" subtitle="Canonical operational event stream — all sources">
         <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive">

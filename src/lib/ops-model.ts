@@ -1,5 +1,5 @@
 /**
- * Shift-Log canonical operational data model.
+ * OptiLog canonical operational data model.
  *
  * Every record — whether captured by an operator on mobile, pulled from MES,
  * pushed by SCADA or imported from CSV — is normalised into these shapes.

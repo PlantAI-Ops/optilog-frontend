@@ -357,15 +357,18 @@ export function usePlantConnectors(plantId: string | undefined) {
 /*                            mobile shift endpoints                          */
 /* -------------------------------------------------------------------------- */
 
+export type ShiftType = "morning" | "afternoon" | "night" | "pending";
+export type ShiftStatus = "scheduled" | "active" | "handed_over" | "closed" | "pending";
+
 export interface CurrentShiftResponse {
   current_shift: {
     shift_id: string;
-    shift_type: string;
+    shift_type: ShiftType;
     name: string;
-    start: string;
-    end: string;
+    start: number;
+    end: number;
     date: string;
-    status: string;
+    status: ShiftStatus;
     team_id: string;
     team_name: string;
     line_id: string;

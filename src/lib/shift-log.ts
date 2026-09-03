@@ -180,7 +180,15 @@ export async function login(email: string, password: string): Promise<void> {
     const user = await api.get<User>("/auth/me");
     setState({ user, loading: false });
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : "Login failed";
+    const raw = e instanceof Error ? e.message : "Login failed";
+    let message: string;
+    if (raw.includes("Failed to fetch") || raw.includes("NetworkError")) {
+      message = "Unable to connect. Check your internet connection.";
+    } else if (raw.includes("401") || raw.toLowerCase().includes("unauthorized") || raw.toLowerCase().includes("invalid")) {
+      message = "Invalid email or password.";
+    } else {
+      message = raw;
+    }
     setState({ error: message, loading: false });
     throw e;
   }

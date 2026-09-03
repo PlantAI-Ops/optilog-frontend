@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { ConsoleShell, SourceBadge, StatCard } from "@/components/console/ConsoleShell";
 import { SOURCE_LABEL, STATUS_LABEL } from "@/lib/ops-model";
+import { ApiError } from "@/lib/api";
 import { useShiftLog } from "@/lib/shift-log";
 import { useShiftEvents, useShifts } from "@/lib/hooks";
 
@@ -25,13 +26,13 @@ const PRESETS = [
 export const Route = createFileRoute("/console/shifts")({
   head: () => ({
     meta: [
-      { title: "Shift Explorer | Shift-Log Operations Console" },
+      { title: "Shift Explorer | OptiLog Operations Console" },
       {
         name: "description",
         content:
           "Drill from plant to team, shift, line and event: production, target, downtime and open issues for every shift.",
       },
-      { property: "og:title", content: "Shift Explorer | Shift-Log" },
+      { property: "og:title", content: "Shift Explorer | OptiLog" },
       { property: "og:description", content: "Per-shift production, downtime and issue detail." },
     ],
   }),
@@ -68,7 +69,7 @@ function ShiftsPage() {
     );
   }
 
-  if (shifts.error) {
+  if (shifts.error && !(shifts.error instanceof ApiError && shifts.error.status === 404)) {
     return (
       <ConsoleShell title="Shifts" subtitle="Plant → Team → Shift → Line → Event">
         <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive">
@@ -77,6 +78,8 @@ function ShiftsPage() {
       </ConsoleShell>
     );
   }
+
+  const shiftsData = shifts.data ?? [];
 
   return (
     <ConsoleShell title="Shifts" subtitle="Plant → Team → Shift → Line → Event">
@@ -107,7 +110,7 @@ function ShiftsPage() {
             All shifts
           </header>
           <ul className="divide-y divide-border/60">
-            {shifts.data?.map((s) => (
+            {shiftsData.map((s) => (
               <li key={s.id}>
                 <button
                   type="button"
@@ -128,7 +131,7 @@ function ShiftsPage() {
                 </button>
               </li>
             ))}
-            {shifts.data?.length === 0 ? (
+            {shiftsData.length === 0 ? (
               <li className="px-4 py-6 text-sm text-muted-foreground">No shifts found for this date.</li>
             ) : null}
           </ul>

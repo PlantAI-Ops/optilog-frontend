@@ -19,13 +19,13 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Shift-Log — Voice shift logging for production floors" },
+      { title: "OptiLog — Voice shift logging for production floors" },
       {
         name: "description",
         content:
           "Capture production events by voice in one tap. Offline-first shift logging for operators and supervisors.",
       },
-      { property: "og:title", content: "Shift-Log — Voice shift logging" },
+      { property: "og:title", content: "OptiLog — Voice shift logging" },
       {
         property: "og:description",
         content: "One-tap voice capture of shift events, offline-first, with supervisor review.",
@@ -60,10 +60,11 @@ function LoginScreen() {
   return (
     <AppShell>
       <div className="flex flex-1 flex-col justify-center gap-6 py-8">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight">Sign in</h1>
+        <div className="flex flex-col items-center text-center">
+          <img src="/optilog-logo.svg" alt="OptiLog" className="mb-4 h-20 w-20" />
+          <h1 className="text-3xl font-black tracking-tight">OptiLog</h1>
           <p className="mt-1 text-base text-muted-foreground">
-            Your session stays active across shifts.
+            Sign in to continue
           </p>
         </div>
         {state.error ? (
@@ -169,7 +170,7 @@ function StartShiftScreen() {
               </div>
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">Team</dt>
-                <dd className="font-bold">{shift.team_name}</dd>
+                <dd className="font-bold">{shift.team_name || "—"}</dd>
               </div>
 
               <label className="block">
@@ -201,11 +202,12 @@ function StartShiftScreen() {
                 <dd className="font-bold capitalize">{state.user?.role?.replace(/_/g, " ")}</dd>
               </div>
             </div>
-          ) : (
-            <div className="rounded-2xl border border-border bg-card p-6 text-center">
-              <p className="text-lg font-bold text-muted-foreground">No active shift for today</p>
-              <p className="mt-2 text-base text-muted-foreground">
-                Contact your shift supervisor to schedule a shift before logging events.
+          ) : null}
+
+          {shift?.status === "pending" && (
+            <div className="rounded-2xl border border-info/40 bg-info/10 p-4">
+              <p className="text-base font-medium text-info">
+                No scheduled shift today. Events will be logged to a pending shift.
               </p>
             </div>
           )}

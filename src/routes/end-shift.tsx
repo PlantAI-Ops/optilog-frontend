@@ -8,13 +8,13 @@ import { usePlanMaintenance } from "@/lib/hooks";
 export const Route = createFileRoute("/end-shift")({
   head: () => ({
     meta: [
-      { title: "End shift & handover — Shift-Log" },
+      { title: "End shift & handover — OptiLog" },
       {
         name: "description",
         content:
           "Close out the shift with a summary of events and a handover note for the next crew.",
       },
-      { property: "og:title", content: "End shift & handover — Shift-Log" },
+      { property: "og:title", content: "End shift & handover — OptiLog" },
       {
         property: "og:description",
         content: "Shift totals, unresolved issues and the handover note in one screen.",

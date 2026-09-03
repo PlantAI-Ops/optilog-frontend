@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ChevronDown, Loader2, Pencil, Plus, Save, Sparkles, Check } from "lucide-react";
 import { ConsoleShell, SourceBadge, StatCard } from "@/components/console/ConsoleShell";
 import { SOURCE_LABEL, STATUS_LABEL } from "@/lib/ops-model";
+import { ApiError } from "@/lib/api";
 import { hasMinRole, useShiftLog } from "@/lib/shift-log";
 import {
   useApproveRCA,
@@ -19,13 +20,13 @@ import {
 export const Route = createFileRoute("/console/rca")({
   head: () => ({
     meta: [
-      { title: "RCA Workspace | Shift-Log Operations Console" },
+      { title: "RCA Workspace | OptiLog Operations Console" },
       {
         name: "description",
         content:
           "A root cause workspace with incident timeline, cross-system evidence, 5-Why investigation, corrective and preventive actions.",
       },
-      { property: "og:title", content: "RCA Workspace | Shift-Log" },
+      { property: "og:title", content: "RCA Workspace | OptiLog" },
       {
         property: "og:description",
         content: "Investigate incidents with evidence from operators, MES, SCADA and CMMS.",
@@ -80,7 +81,7 @@ function RcaPage() {
     );
   }
 
-  if (incidents.error) {
+  if (incidents.error && !(incidents.error instanceof ApiError && incidents.error.status === 404)) {
     return (
       <ConsoleShell title="Root cause analysis" subtitle="Incidents as first-class investigations">
         <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive">
@@ -89,6 +90,8 @@ function RcaPage() {
       </ConsoleShell>
     );
   }
+
+  const incidentsData = incidents.data ?? [];
 
   const handleStartInvestigation = () => {
     if (!currentId) return;
@@ -183,7 +186,7 @@ function RcaPage() {
             ) : null}
           </header>
           <ul className="divide-y divide-border/60">
-            {incidents.data?.map((i) => (
+            {incidentsData.map((i) => (
               <li key={i.id}>
                 <button
                   type="button"
@@ -201,7 +204,7 @@ function RcaPage() {
                 </button>
               </li>
             ))}
-            {incidents.data?.length === 0 ? (
+            {incidentsData.length === 0 ? (
               <li className="px-4 py-6 text-sm text-muted-foreground">No open incidents.</li>
             ) : null}
           </ul>

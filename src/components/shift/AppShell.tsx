@@ -22,7 +22,7 @@ export function AppShell({ children, title, onBack }: { children: ReactNode; tit
             </button>
           ) : null}
           <Link to="/" className="flex flex-col leading-tight">
-            <span className="text-sm font-black tracking-[0.2em] text-primary">SHIFT-LOG</span>
+            <span className="text-sm font-black tracking-[0.2em] text-primary">OPTILOG</span>
             {title ? (
               <span className="text-xs font-medium text-muted-foreground truncate">{title}</span>
             ) : null}

@@ -24,13 +24,13 @@ const PRESETS = [
 export const Route = createFileRoute("/console/teams")({
   head: () => ({
     meta: [
-      { title: "Team Performance | Shift-Log Operations Console" },
+      { title: "Team Performance | OptiLog Operations Console" },
       {
         name: "description",
         content:
           "Compare teams across shifts: achievement, downtime, event volume and open issues, plus the worst-performing assets.",
       },
-      { property: "og:title", content: "Team Performance | Shift-Log" },
+      { property: "og:title", content: "Team Performance | OptiLog" },
       { property: "og:description", content: "Per-team and per-shift operational performance." },
     ],
   }),

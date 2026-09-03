@@ -19,13 +19,13 @@ function todayStr() {
 export const Route = createFileRoute("/console/")({
   head: () => ({
     meta: [
-      { title: "Plant Dashboard | Shift-Log Operations Console" },
+      { title: "Plant Dashboard | OptiLog Operations Console" },
       {
         name: "description",
         content:
           "Live plant-wide visibility across teams, shifts and lines: achievement, downtime, open issues and pending root cause analyses.",
       },
-      { property: "og:title", content: "Plant Dashboard | Shift-Log Operations Console" },
+      { property: "og:title", content: "Plant Dashboard | OptiLog Operations Console" },
       {
         property: "og:description",
         content: "Team, shift and asset performance from one operational event layer.",

@@ -25,13 +25,21 @@ export function setRefreshToken(token: string) {
   localStorage.setItem(REFRESH_TOKEN_KEY, token);
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
     super(message);
     this.name = "ApiError";
     this.status = status;
   }
+}
+
+function statusMessage(status: number): string {
+  if (status === 404) return "This feature is not available yet.";
+  if (status === 403) return "You don't have permission to view this.";
+  if (status === 500) return "Something went wrong on our end.";
+  if (status === 503) return "Service temporarily unavailable.";
+  return `Request failed (${status})`;
 }
 
 async function apiFetch<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
@@ -65,7 +73,7 @@ async function apiFetch<T = unknown>(method: string, path: string, body?: unknow
     const message =
       (data && typeof data === "object" && "message" in data
         ? (data as { message: string }).message
-        : null) ?? `Request failed (${res.status})`;
+        : null) ?? statusMessage(res.status);
     throw new ApiError(message, res.status);
   }
 
@@ -109,7 +117,7 @@ export async function postFormData<T = unknown>(path: string, formData: FormData
     const message =
       (data && typeof data === "object" && "message" in data
         ? (data as { message: string }).message
-        : null) ?? `Request failed (${res.status})`;
+        : null) ?? statusMessage(res.status);
     throw new ApiError(message, res.status);
   }
 
