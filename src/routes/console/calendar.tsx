@@ -5,6 +5,7 @@ import { CalendarClock, ChevronDown, ChevronRight, Loader2, X } from "lucide-rea
 import { Calendar } from "@/components/ui/calendar";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { useShiftLog } from "@/lib/shift-log";
+import { ApiError } from "@/lib/api";
 import {
   useShiftsMonth,
   type ShiftDaySummary,
@@ -15,12 +16,12 @@ import {
 export const Route = createFileRoute("/console/calendar")({
   head: () => ({
     meta: [
-      { title: "Calendar | Shift-Log Operations Console" },
+      { title: "Calendar | OptiLog Operations Console" },
       {
         name: "description",
         content: "Monthly calendar view of shifts and events across your plant.",
       },
-      { property: "og:title", content: "Calendar | Shift-Log" },
+      { property: "og:title", content: "Calendar | OptiLog" },
       { property: "og:description", content: "Monthly calendar view of shifts and events." },
     ],
   }),
@@ -141,7 +142,7 @@ function CalendarPage() {
             <div className="flex items-center justify-center rounded-xl border border-border bg-card py-20">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
-          ) : monthData.error ? (
+          ) : monthData.error && !(monthData.error instanceof ApiError && monthData.error.status === 404) ? (
             <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive">
               Failed to load month data. {monthData.error.message}
             </div>

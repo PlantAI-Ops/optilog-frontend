@@ -7,13 +7,13 @@ import { usePlant, useAreas, useLines, useAssets } from "@/lib/hooks";
 export const Route = createFileRoute("/console/data")({
   head: () => ({
     meta: [
-      { title: "Canonical Data Model & API | Shift-Log" },
+      { title: "Canonical Data Model & API | OptiLog" },
       {
         name: "description",
         content:
-          "The canonical operational model behind Shift-Log: asset hierarchy, the OperationalEvent schema, and the REST, webhook and export surface for downstream systems.",
+          "The canonical operational model behind OptiLog: asset hierarchy, the OperationalEvent schema, and the REST, webhook and export surface for downstream systems.",
       },
-      { property: "og:title", content: "Canonical Data Model & API | Shift-Log" },
+      { property: "og:title", content: "Canonical Data Model & API | OptiLog" },
       {
         property: "og:description",
         content: "Asset hierarchy, event schema and the outbound API surface.",
@@ -113,7 +113,7 @@ function DataPage() {
 
           <section className="mt-6 rounded-xl border border-border bg-card">
             <header className="border-b border-border px-4 py-3 text-sm font-semibold">
-              Outbound surface — how other systems consume Shift-Log
+              Outbound surface — how other systems consume OptiLog
             </header>
             <table className="w-full text-sm">
               <tbody>

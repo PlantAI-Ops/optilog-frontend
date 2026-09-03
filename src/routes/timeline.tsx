@@ -17,12 +17,12 @@ import {
 export const Route = createFileRoute("/timeline")({
   head: () => ({
     meta: [
-      { title: "Shift timeline — Shift-Log" },
+      { title: "Shift timeline — OptiLog" },
       {
         name: "description",
         content: "Chronological record of this shift's events, transcripts and resolution status.",
       },
-      { property: "og:title", content: "Shift timeline — Shift-Log" },
+      { property: "og:title", content: "Shift timeline — OptiLog" },
       {
         property: "og:description",
         content: "Every logged event with its transcript, causes and status.",

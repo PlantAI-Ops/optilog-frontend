@@ -12,12 +12,12 @@ import {
 export const Route = createFileRoute("/report")({
   head: () => ({
     meta: [
-      { title: "Shift report — Shift-Log" },
+      { title: "Shift report — OptiLog" },
       {
         name: "description",
         content: "Review, approve and share the generated shift report PDF.",
       },
-      { property: "og:title", content: "Shift report — Shift-Log" },
+      { property: "og:title", content: "Shift report — OptiLog" },
       {
         property: "og:description",
         content: "Generated shift report with events, causes and handover note.",

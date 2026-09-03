@@ -1,6 +1,19 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { format, startOfMonth, addMonths, subMonths } from "date-fns";
+import {
+  format,
+  startOfMonth,
+  addMonths,
+  subMonths,
+  startOfWeek,
+  endOfWeek,
+  addDays,
+  subDays,
+  addWeeks,
+  subWeeks,
+  isWithinInterval,
+  parseISO,
+} from "date-fns";
 import {
   CalendarDays,
   CheckCircle2,
@@ -13,6 +26,7 @@ import {
 } from "lucide-react";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { useShiftLog } from "@/lib/shift-log";
+import { ApiError } from "@/lib/api";
 import {
   usePlannedMaintenance,
   useCompletePlannedMaintenance,
@@ -23,12 +37,12 @@ import {
 export const Route = createFileRoute("/console/maintenance")({
   head: () => ({
     meta: [
-      { title: "Planned Maintenance | Shift-Log Operations Console" },
+      { title: "Planned Maintenance | OptiLog Operations Console" },
       {
         name: "description",
         content: "View and manage all planned maintenance items scheduled across shifts.",
       },
-      { property: "og:title", content: "Planned Maintenance | Shift-Log" },
+      { property: "og:title", content: "Planned Maintenance | OptiLog" },
       { property: "og:description", content: "Scheduled maintenance items across all shifts." },
     ],
   }),
@@ -42,21 +56,41 @@ const SEVERITY_COLORS: Record<string, string> = {
   low: "bg-green-500",
 };
 
+type ViewMode = "day" | "week" | "month";
+
 function MaintenancePage() {
   const user = useShiftLog().user;
   const plantId = user?.plant_ids?.[0];
 
+  const [view, setView] = useState<ViewMode>("month");
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+
   const monthStr = format(month, "yyyy-MM");
 
   const planned = usePlannedMaintenance(plantId, monthStr);
   const complete = useCompletePlannedMaintenance();
   const update = useUpdatePlannedMaintenance();
 
-  const items = planned.data ?? [];
+  const filteredItems = useMemo(() => {
+    const items = Array.isArray(planned.data) ? planned.data : [];
+    if (view === "month") return items;
 
-  // Group by planned_date
-  const grouped = items.reduce<Record<string, PlannedMaintenanceItem[]>>((acc, item) => {
+    if (view === "day") {
+      const target = format(selectedDate, "yyyy-MM-dd");
+      return items.filter((i) => i.planned_date === target);
+    }
+
+    // week
+    const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(selectedDate, { weekStartsOn: 1 });
+    return items.filter((i) => {
+      const d = parseISO(i.planned_date);
+      return isWithinInterval(d, { start: weekStart, end: weekEnd });
+    });
+  }, [planned.data, view, selectedDate]);
+
+  const grouped = filteredItems.reduce<Record<string, PlannedMaintenanceItem[]>>((acc, item) => {
     const key = item.planned_date;
     if (!acc[key]) acc[key] = [];
     acc[key].push(item);
@@ -65,27 +99,82 @@ function MaintenancePage() {
 
   const sortedDates = Object.keys(grouped).sort();
 
+  const handlePrev = () => {
+    if (view === "month") setMonth((m) => subMonths(m, 1));
+    else if (view === "week") setSelectedDate((d) => subWeeks(d, 1));
+    else setSelectedDate((d) => subDays(d, 1));
+  };
+
+  const handleNext = () => {
+    if (view === "month") setMonth((m) => addMonths(m, 1));
+    else if (view === "week") setSelectedDate((d) => addWeeks(d, 1));
+    else setSelectedDate((d) => addDays(d, 1));
+  };
+
+  const headerLabel = useMemo(() => {
+    if (view === "month") return format(month, "MMMM yyyy");
+
+    if (view === "day") {
+      return format(selectedDate, "EEEE, MMMM d, yyyy");
+    }
+
+    // week
+    const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(selectedDate, { weekStartsOn: 1 });
+    if (format(weekStart, "MMM yyyy") === format(weekEnd, "MMM yyyy")) {
+      return `${format(weekStart, "MMM d")} – ${format(weekEnd, "d, yyyy")}`;
+    }
+    return `${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`;
+  }, [view, month, selectedDate]);
+
   return (
     <ConsoleShell title="Planned Maintenance" subtitle="Scheduled maintenance across all shifts">
-      {/* Month picker */}
+      {/* View tabs */}
+      <div className="mb-4 flex gap-1 rounded-lg border border-border bg-secondary p-1">
+        {(["day", "week", "month"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setView(v)}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+              view === v
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+
+      {/* Date navigator */}
       <div className="mb-6 flex items-center gap-3">
         <button
           type="button"
-          onClick={() => setMonth((m) => subMonths(m, 1))}
+          onClick={handlePrev}
           className="rounded-lg border border-border bg-secondary p-1.5 text-muted-foreground hover:bg-secondary/80"
         >
           <ChevronLeft className="size-4" />
         </button>
-        <span className="min-w-[120px] text-center text-sm font-semibold">
-          {format(month, "MMMM yyyy")}
-        </span>
+        <span className="min-w-[180px] text-center text-sm font-semibold">{headerLabel}</span>
         <button
           type="button"
-          onClick={() => setMonth((m) => addMonths(m, 1))}
+          onClick={handleNext}
           className="rounded-lg border border-border bg-secondary p-1.5 text-muted-foreground hover:bg-secondary/80"
         >
           <ChevronRight className="size-4" />
         </button>
+        {view === "day" && (
+          <input
+            type="date"
+            value={format(selectedDate, "yyyy-MM-dd")}
+            onChange={(e) => {
+              const d = e.target.value;
+              if (d) setSelectedDate(parseISO(d));
+            }}
+            className="h-8 rounded-lg border border-border bg-secondary px-2 text-xs outline-none focus:border-ring"
+          />
+        )}
       </div>
 
       {/* Content */}
@@ -93,14 +182,20 @@ function MaintenancePage() {
         <div className="flex items-center justify-center py-20">
           <Loader2 className="size-8 animate-spin text-muted-foreground" />
         </div>
-      ) : planned.error ? (
+      ) : planned.error && !(planned.error instanceof ApiError && planned.error.status === 404) ? (
         <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive">
           Failed to load planned maintenance. {planned.error.message}
         </div>
       ) : sortedDates.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card py-20 text-center">
           <Wrench className="mb-3 size-10 text-muted-foreground" />
-          <p className="text-sm font-medium text-muted-foreground">No planned maintenance this month</p>
+          <p className="text-sm font-medium text-muted-foreground">
+            {view === "day"
+              ? "No planned maintenance this day"
+              : view === "week"
+                ? "No planned maintenance this week"
+                : "No planned maintenance this month"}
+          </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Push unresolved issues from the timeline or end-shift handover.
           </p>
@@ -123,7 +218,9 @@ function MaintenancePage() {
                     key={item.event_id}
                     item={item}
                     plantId={plantId ?? ""}
-                    onComplete={() => complete.mutateAsync({ plantId: plantId ?? "", eventId: item.event_id })}
+                    onComplete={() =>
+                      complete.mutateAsync({ plantId: plantId ?? "", eventId: item.event_id })
+                    }
                     onReschedule={(newDate) =>
                       update.mutateAsync({
                         plantId: plantId ?? "",
@@ -199,7 +296,9 @@ function MaintenanceCard({
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span>{item.asset_name}</span>
           <span>{item.line_name}</span>
-          <span>{item.shift_name} · {item.team_name}</span>
+          <span>
+            {item.shift_name} · {item.team_name}
+          </span>
           <span>Logged by {item.logged_by}</span>
         </div>
 

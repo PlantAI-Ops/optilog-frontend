@@ -79,13 +79,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Shift-Log — Operational Record & Intelligence Layer" },
+      { title: "OptiLog — Operational Record & Intelligence Layer" },
       {
         name: "description",
         content:
-          "Shift-Log captures shift events on mobile and turns them into plant-wide operational intelligence on desktop.",
+          "OptiLog captures shift events on mobile and turns them into plant-wide operational intelligence on desktop.",
       },
-      { property: "og:title", content: "Shift-Log — Operational Record Layer" },
+      { property: "og:title", content: "OptiLog — Operational Record Layer" },
       {
         property: "og:description",
         content: "Voice capture on the floor, visibility and RCA in the console.",

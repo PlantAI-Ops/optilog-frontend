@@ -9,13 +9,13 @@ import { usePlantConnectors, type ConnectorRow } from "@/lib/hooks";
 export const Route = createFileRoute("/console/integrations")({
   head: () => ({
     meta: [
-      { title: "Shift-Log Connect | Integration Hub" },
+      { title: "OptiLog Connect | Integration Hub" },
       {
         name: "description",
         content:
           "Configure connectors to MES, SCADA, CMMS and ERP over REST, SQL, MQTT, OPC UA, SFTP and webhooks, and map external schemas to the canonical model.",
       },
-      { property: "og:title", content: "Shift-Log Connect | Integration Hub" },
+      { property: "og:title", content: "OptiLog Connect | Integration Hub" },
       {
         property: "og:description",
         content: "Two-way interoperability with existing plant systems.",
@@ -53,7 +53,7 @@ function IntegrationsPage() {
 
   return (
     <ConsoleShell
-      title="Shift-Log Connect"
+      title="OptiLog Connect"
       subtitle="Connectors → adapters → canonical operational model"
     >
       {connectorsQuery.isLoading ? (
