@@ -15,8 +15,59 @@ export type Role =
   | "integration_admin"
   | "system_admin";
 
-export type EventStatus = "draft" | "confirmed" | "investigating" | "resolved" | "planned_maintenance";
+export type EventStatus =
+  "draft" | "confirmed" | "investigating" | "resolved" | "planned_maintenance";
 export type SyncState = "pending" | "synced";
+
+/* -------------------------------------------------------------------------- */
+/*                               admin types                                  */
+/* -------------------------------------------------------------------------- */
+
+export type TenantStatus = "trial" | "active" | "suspended" | "cancelled";
+
+export interface TenantConfig {
+  rca_enabled: boolean;
+  integrations_enabled: boolean;
+  analytics_enabled: boolean;
+  max_events_per_month: number | null;
+}
+
+export interface Tenant {
+  id: string;
+  name: string;
+  slug: string;
+  contact_email: string;
+  status: TenantStatus;
+  trial_ends_at: string | null;
+  max_users: number;
+  max_plants: number;
+  config: TenantConfig;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminPlant {
+  id: string;
+  tenant_id: string;
+  name: string;
+  location: string;
+  timezone: string;
+  created_at: string;
+}
+
+export interface Invitation {
+  id: string;
+  tenant_id: string;
+  email: string;
+  role: Role;
+  plant_ids: string[];
+  token: string;
+  expires_at: string;
+  accepted: boolean;
+  created_at: string;
+}
+
+export type SeedPreset = "minimal" | "standard" | "full";
 
 export interface ShiftEvent {
   id: string;
@@ -184,7 +235,11 @@ export async function login(email: string, password: string): Promise<void> {
     let message: string;
     if (raw.includes("Failed to fetch") || raw.includes("NetworkError")) {
       message = "Unable to connect. Check your internet connection.";
-    } else if (raw.includes("401") || raw.toLowerCase().includes("unauthorized") || raw.toLowerCase().includes("invalid")) {
+    } else if (
+      raw.includes("401") ||
+      raw.toLowerCase().includes("unauthorized") ||
+      raw.toLowerCase().includes("invalid")
+    ) {
       message = "Invalid email or password.";
     } else {
       message = raw;

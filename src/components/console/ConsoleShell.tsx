@@ -9,12 +9,13 @@ import {
   LogOut,
   Plug,
   Search,
+  Shield,
   Smartphone,
   Users,
   Wrench,
 } from "lucide-react";
 import { usePlant } from "@/lib/hooks";
-import { logout, useShiftLog } from "@/lib/shift-log";
+import { logout, hasMinRole, useShiftLog } from "@/lib/shift-log";
 
 const NAV = [
   { to: "/console", label: "Dashboard", icon: Gauge, exact: true },
@@ -27,6 +28,8 @@ const NAV = [
   { to: "/console/integrations", label: "Connect", icon: Plug, exact: false },
   { to: "/console/data", label: "Data model", icon: Database, exact: false },
 ] as const;
+
+const ADMIN_NAV = { to: "/console/admin", label: "Admin", icon: Shield, exact: false } as const;
 
 export function ConsoleShell({
   children,
@@ -64,6 +67,18 @@ export function ConsoleShell({
               {item.label}
             </Link>
           ))}
+          {user && hasMinRole(user.role, "plant_manager") && (
+            <Link
+              to={ADMIN_NAV.to}
+              activeOptions={{ exact: ADMIN_NAV.exact }}
+              activeProps={{ className: "bg-secondary text-foreground" }}
+              inactiveProps={{ className: "text-muted-foreground hover:bg-secondary/60" }}
+              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+            >
+              <Shield className="size-4" />
+              {ADMIN_NAV.label}
+            </Link>
+          )}
         </nav>
         <Link
           to="/"
@@ -87,7 +102,10 @@ export function ConsoleShell({
               </span>
               <button
                 type="button"
-                onClick={() => { logout(); window.location.href = "/"; }}
+                onClick={() => {
+                  logout();
+                  window.location.href = "/";
+                }}
                 className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1 hover:bg-secondary/60"
               >
                 <LogOut className="size-3" /> Sign out
@@ -107,6 +125,17 @@ export function ConsoleShell({
                 {item.label}
               </Link>
             ))}
+            {user && hasMinRole(user.role, "plant_manager") && (
+              <Link
+                to={ADMIN_NAV.to}
+                activeOptions={{ exact: ADMIN_NAV.exact }}
+                activeProps={{ className: "bg-secondary text-foreground" }}
+                inactiveProps={{ className: "text-muted-foreground" }}
+                className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium"
+              >
+                Admin
+              </Link>
+            )}
             <Link
               to="/"
               className="ml-auto flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary/60"

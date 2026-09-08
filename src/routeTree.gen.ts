@@ -15,6 +15,7 @@ import { Route as EndShiftRouteImport } from './routes/end-shift'
 import { Route as ReportRouteImport } from './routes/report'
 import { Route as TimelineRouteImport } from './routes/timeline'
 import { Route as ConsoleIndexRouteImport } from './routes/console/index'
+import { Route as ConsoleAdminRouteRouteImport } from './routes/console/admin/route'
 import { Route as ConsoleCalendarRouteImport } from './routes/console/calendar'
 import { Route as ConsoleDataRouteImport } from './routes/console/data'
 import { Route as ConsoleEventsRouteImport } from './routes/console/events'
@@ -23,6 +24,12 @@ import { Route as ConsoleMaintenanceRouteImport } from './routes/console/mainten
 import { Route as ConsoleRcaRouteImport } from './routes/console/rca'
 import { Route as ConsoleShiftsRouteImport } from './routes/console/shifts'
 import { Route as ConsoleTeamsRouteImport } from './routes/console/teams'
+import { Route as InviteTokenRouteImport } from './routes/invite/$token'
+import { Route as ConsoleAdminIndexRouteImport } from './routes/console/admin/index'
+import { Route as ConsoleAdminTenantIdRouteImport } from './routes/console/admin/$tenantId'
+import { Route as ConsoleAdminTenantIdIndexRouteImport } from './routes/console/admin/$tenantId/index'
+import { Route as ConsoleAdminTenantIdInviteRouteImport } from './routes/console/admin/$tenantId/invite'
+import { Route as ConsoleAdminTenantIdOnboardRouteImport } from './routes/console/admin/$tenantId/onboard'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -52,6 +59,11 @@ const TimelineRoute = TimelineRouteImport.update({
 const ConsoleIndexRoute = ConsoleIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
+const ConsoleAdminRouteRoute = ConsoleAdminRouteRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => ConsoleRouteRoute,
 } as any)
 const ConsoleCalendarRoute = ConsoleCalendarRouteImport.update({
@@ -94,6 +106,39 @@ const ConsoleTeamsRoute = ConsoleTeamsRouteImport.update({
   path: '/teams',
   getParentRoute: () => ConsoleRouteRoute,
 } as any)
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: '/invite/$token',
+  path: '/invite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConsoleAdminIndexRoute = ConsoleAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConsoleAdminRouteRoute,
+} as any)
+const ConsoleAdminTenantIdRoute = ConsoleAdminTenantIdRouteImport.update({
+  id: '/$tenantId',
+  path: '/$tenantId',
+  getParentRoute: () => ConsoleAdminRouteRoute,
+} as any)
+const ConsoleAdminTenantIdIndexRoute =
+  ConsoleAdminTenantIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ConsoleAdminTenantIdRoute,
+  } as any)
+const ConsoleAdminTenantIdInviteRoute =
+  ConsoleAdminTenantIdInviteRouteImport.update({
+    id: '/invite',
+    path: '/invite',
+    getParentRoute: () => ConsoleAdminTenantIdRoute,
+  } as any)
+const ConsoleAdminTenantIdOnboardRoute =
+  ConsoleAdminTenantIdOnboardRouteImport.update({
+    id: '/onboard',
+    path: '/onboard',
+    getParentRoute: () => ConsoleAdminTenantIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -101,6 +146,7 @@ export interface FileRoutesByFullPath {
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/admin': typeof ConsoleAdminRouteRouteWithChildren
   '/console/calendar': typeof ConsoleCalendarRoute
   '/console/data': typeof ConsoleDataRoute
   '/console/events': typeof ConsoleEventsRoute
@@ -109,7 +155,13 @@ export interface FileRoutesByFullPath {
   '/console/rca': typeof ConsoleRcaRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/console/': typeof ConsoleIndexRoute
+  '/console/admin/$tenantId': typeof ConsoleAdminTenantIdRouteWithChildren
+  '/console/admin/': typeof ConsoleAdminIndexRoute
+  '/console/admin/$tenantId/invite': typeof ConsoleAdminTenantIdInviteRoute
+  '/console/admin/$tenantId/onboard': typeof ConsoleAdminTenantIdOnboardRoute
+  '/console/admin/$tenantId/': typeof ConsoleAdminTenantIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -124,7 +176,12 @@ export interface FileRoutesByTo {
   '/console/rca': typeof ConsoleRcaRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/console': typeof ConsoleIndexRoute
+  '/console/admin': typeof ConsoleAdminIndexRoute
+  '/console/admin/$tenantId/invite': typeof ConsoleAdminTenantIdInviteRoute
+  '/console/admin/$tenantId/onboard': typeof ConsoleAdminTenantIdOnboardRoute
+  '/console/admin/$tenantId': typeof ConsoleAdminTenantIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -133,6 +190,7 @@ export interface FileRoutesById {
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
+  '/console/admin': typeof ConsoleAdminRouteRouteWithChildren
   '/console/calendar': typeof ConsoleCalendarRoute
   '/console/data': typeof ConsoleDataRoute
   '/console/events': typeof ConsoleEventsRoute
@@ -141,7 +199,13 @@ export interface FileRoutesById {
   '/console/rca': typeof ConsoleRcaRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/console/': typeof ConsoleIndexRoute
+  '/console/admin/$tenantId': typeof ConsoleAdminTenantIdRouteWithChildren
+  '/console/admin/': typeof ConsoleAdminIndexRoute
+  '/console/admin/$tenantId/invite': typeof ConsoleAdminTenantIdInviteRoute
+  '/console/admin/$tenantId/onboard': typeof ConsoleAdminTenantIdOnboardRoute
+  '/console/admin/$tenantId/': typeof ConsoleAdminTenantIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -151,6 +215,7 @@ export interface FileRouteTypes {
     | '/end-shift'
     | '/report'
     | '/timeline'
+    | '/console/admin'
     | '/console/calendar'
     | '/console/data'
     | '/console/events'
@@ -159,7 +224,13 @@ export interface FileRouteTypes {
     | '/console/rca'
     | '/console/shifts'
     | '/console/teams'
+    | '/invite/$token'
     | '/console/'
+    | '/console/admin/$tenantId'
+    | '/console/admin/'
+    | '/console/admin/$tenantId/invite'
+    | '/console/admin/$tenantId/onboard'
+    | '/console/admin/$tenantId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -174,7 +245,12 @@ export interface FileRouteTypes {
     | '/console/rca'
     | '/console/shifts'
     | '/console/teams'
+    | '/invite/$token'
     | '/console'
+    | '/console/admin'
+    | '/console/admin/$tenantId/invite'
+    | '/console/admin/$tenantId/onboard'
+    | '/console/admin/$tenantId'
   id:
     | '__root__'
     | '/'
@@ -182,6 +258,7 @@ export interface FileRouteTypes {
     | '/end-shift'
     | '/report'
     | '/timeline'
+    | '/console/admin'
     | '/console/calendar'
     | '/console/data'
     | '/console/events'
@@ -190,7 +267,13 @@ export interface FileRouteTypes {
     | '/console/rca'
     | '/console/shifts'
     | '/console/teams'
+    | '/invite/$token'
     | '/console/'
+    | '/console/admin/$tenantId'
+    | '/console/admin/'
+    | '/console/admin/$tenantId/invite'
+    | '/console/admin/$tenantId/onboard'
+    | '/console/admin/$tenantId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -199,6 +282,7 @@ export interface RootRouteChildren {
   EndShiftRoute: typeof EndShiftRoute
   ReportRoute: typeof ReportRoute
   TimelineRoute: typeof TimelineRoute
+  InviteTokenRoute: typeof InviteTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -243,6 +327,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/console/'
       preLoaderRoute: typeof ConsoleIndexRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
+    '/console/admin': {
+      id: '/console/admin'
+      path: '/admin'
+      fullPath: '/console/admin'
+      preLoaderRoute: typeof ConsoleAdminRouteRouteImport
       parentRoute: typeof ConsoleRouteRoute
     }
     '/console/calendar': {
@@ -301,10 +392,81 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleTeamsRouteImport
       parentRoute: typeof ConsoleRouteRoute
     }
+    '/invite/$token': {
+      id: '/invite/$token'
+      path: '/invite/$token'
+      fullPath: '/invite/$token'
+      preLoaderRoute: typeof InviteTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/console/admin/': {
+      id: '/console/admin/'
+      path: '/'
+      fullPath: '/console/admin/'
+      preLoaderRoute: typeof ConsoleAdminIndexRouteImport
+      parentRoute: typeof ConsoleAdminRouteRoute
+    }
+    '/console/admin/$tenantId': {
+      id: '/console/admin/$tenantId'
+      path: '/$tenantId'
+      fullPath: '/console/admin/$tenantId'
+      preLoaderRoute: typeof ConsoleAdminTenantIdRouteImport
+      parentRoute: typeof ConsoleAdminRouteRoute
+    }
+    '/console/admin/$tenantId/': {
+      id: '/console/admin/$tenantId/'
+      path: '/'
+      fullPath: '/console/admin/$tenantId/'
+      preLoaderRoute: typeof ConsoleAdminTenantIdIndexRouteImport
+      parentRoute: typeof ConsoleAdminTenantIdRoute
+    }
+    '/console/admin/$tenantId/invite': {
+      id: '/console/admin/$tenantId/invite'
+      path: '/invite'
+      fullPath: '/console/admin/$tenantId/invite'
+      preLoaderRoute: typeof ConsoleAdminTenantIdInviteRouteImport
+      parentRoute: typeof ConsoleAdminTenantIdRoute
+    }
+    '/console/admin/$tenantId/onboard': {
+      id: '/console/admin/$tenantId/onboard'
+      path: '/onboard'
+      fullPath: '/console/admin/$tenantId/onboard'
+      preLoaderRoute: typeof ConsoleAdminTenantIdOnboardRouteImport
+      parentRoute: typeof ConsoleAdminTenantIdRoute
+    }
   }
 }
 
+interface ConsoleAdminTenantIdRouteChildren {
+  ConsoleAdminTenantIdInviteRoute: typeof ConsoleAdminTenantIdInviteRoute
+  ConsoleAdminTenantIdOnboardRoute: typeof ConsoleAdminTenantIdOnboardRoute
+  ConsoleAdminTenantIdIndexRoute: typeof ConsoleAdminTenantIdIndexRoute
+}
+
+const ConsoleAdminTenantIdRouteChildren: ConsoleAdminTenantIdRouteChildren = {
+  ConsoleAdminTenantIdInviteRoute: ConsoleAdminTenantIdInviteRoute,
+  ConsoleAdminTenantIdOnboardRoute: ConsoleAdminTenantIdOnboardRoute,
+  ConsoleAdminTenantIdIndexRoute: ConsoleAdminTenantIdIndexRoute,
+}
+
+const ConsoleAdminTenantIdRouteWithChildren =
+  ConsoleAdminTenantIdRoute._addFileChildren(ConsoleAdminTenantIdRouteChildren)
+
+interface ConsoleAdminRouteRouteChildren {
+  ConsoleAdminTenantIdRoute: typeof ConsoleAdminTenantIdRouteWithChildren
+  ConsoleAdminIndexRoute: typeof ConsoleAdminIndexRoute
+}
+
+const ConsoleAdminRouteRouteChildren: ConsoleAdminRouteRouteChildren = {
+  ConsoleAdminTenantIdRoute: ConsoleAdminTenantIdRouteWithChildren,
+  ConsoleAdminIndexRoute: ConsoleAdminIndexRoute,
+}
+
+const ConsoleAdminRouteRouteWithChildren =
+  ConsoleAdminRouteRoute._addFileChildren(ConsoleAdminRouteRouteChildren)
+
 interface ConsoleRouteRouteChildren {
+  ConsoleAdminRouteRoute: typeof ConsoleAdminRouteRouteWithChildren
   ConsoleCalendarRoute: typeof ConsoleCalendarRoute
   ConsoleDataRoute: typeof ConsoleDataRoute
   ConsoleEventsRoute: typeof ConsoleEventsRoute
@@ -317,6 +479,7 @@ interface ConsoleRouteRouteChildren {
 }
 
 const ConsoleRouteRouteChildren: ConsoleRouteRouteChildren = {
+  ConsoleAdminRouteRoute: ConsoleAdminRouteRouteWithChildren,
   ConsoleCalendarRoute: ConsoleCalendarRoute,
   ConsoleDataRoute: ConsoleDataRoute,
   ConsoleEventsRoute: ConsoleEventsRoute,
@@ -338,6 +501,7 @@ const rootRouteChildren: RootRouteChildren = {
   EndShiftRoute: EndShiftRoute,
   ReportRoute: ReportRoute,
   TimelineRoute: TimelineRoute,
+  InviteTokenRoute: InviteTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
