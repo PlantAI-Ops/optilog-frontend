@@ -71,8 +71,10 @@ async function apiFetch<T = unknown>(method: string, path: string, body?: unknow
       }
     }
     const message =
-      (data && typeof data === "object" && "message" in data
-        ? (data as { message: string }).message
+      (data && typeof data === "object"
+        ? ((data as Record<string, unknown>)["message"] as string) ??
+          ((data as Record<string, unknown>)["detail"] as string) ??
+          ((data as Record<string, unknown>)["error"] as string)
         : null) ?? statusMessage(res.status);
     throw new ApiError(message, res.status);
   }
@@ -115,8 +117,10 @@ export async function postFormData<T = unknown>(path: string, formData: FormData
       }
     }
     const message =
-      (data && typeof data === "object" && "message" in data
-        ? (data as { message: string }).message
+      (data && typeof data === "object"
+        ? ((data as Record<string, unknown>)["message"] as string) ??
+          ((data as Record<string, unknown>)["detail"] as string) ??
+          ((data as Record<string, unknown>)["error"] as string)
         : null) ?? statusMessage(res.status);
     throw new ApiError(message, res.status);
   }

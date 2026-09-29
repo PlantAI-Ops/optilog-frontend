@@ -37,25 +37,22 @@ export function UserInviteForm({
   onComplete,
 }: {
   plants: AdminPlant[];
-  onInvite: (data: {
-    email: string;
-    role: Role;
-    plant_ids: string[];
-  }) => Promise<InviteResult>;
+  onInvite: (data: { email: string; role: Role; plant_ids: string[] }) => Promise<InviteResult>;
   onComplete?: (results: InviteResult[]) => void;
 }) {
   const [emailsRaw, setEmailsRaw] = useState("");
   const [role, setRole] = useState<Role>("operator");
   const [selectedPlants, setSelectedPlants] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
-  const [progress, setProgress] = useState<{ total: number; done: number; results: InviteResult[] } | null>(null);
+  const [progress, setProgress] = useState<{
+    total: number;
+    done: number;
+    results: InviteResult[];
+  } | null>(null);
 
   const parsedEmails = useMemo(() => parseEmails(emailsRaw), [emailsRaw]);
   const validEmails = useMemo(() => parsedEmails.filter(isValidEmail), [parsedEmails]);
-  const invalidEmails = useMemo(
-    () => parsedEmails.filter((e) => !isValidEmail(e)),
-    [parsedEmails],
-  );
+  const invalidEmails = useMemo(() => parsedEmails.filter((e) => !isValidEmail(e)), [parsedEmails]);
 
   const togglePlant = (plantId: string) => {
     setSelectedPlants((prev) =>
@@ -98,9 +95,7 @@ export function UserInviteForm({
           rows={4}
           className="mt-1 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         />
-        <p className="mt-1 text-xs text-muted-foreground">
-          Comma or newline separated
-        </p>
+        <p className="mt-1 text-xs text-muted-foreground">Comma or newline separated</p>
         {parsedEmails.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
             {validEmails.map((e) => (
@@ -109,7 +104,10 @@ export function UserInviteForm({
               </span>
             ))}
             {invalidEmails.map((e) => (
-              <span key={e} className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive line-through">
+              <span
+                key={e}
+                className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive line-through"
+              >
                 {e}
               </span>
             ))}
@@ -173,9 +171,21 @@ export function UserInviteForm({
 
       {/* Progress */}
       {progress && (
-        <div className="rounded-lg border border-border bg-secondary/50 p-3 text-sm">
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-lg border border-border bg-secondary/50 p-3 text-sm"
+        >
           <div className="flex items-center gap-2">
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+            <div
+              role="progressbar"
+              aria-label="Invitation progress"
+              aria-valuemin={0}
+              aria-valuemax={Math.max(total, 1)}
+              aria-valuenow={done}
+              aria-valuetext={`${done} of ${total} invitations sent`}
+              className="h-2 flex-1 overflow-hidden rounded-full bg-muted"
+            >
               <div
                 className="h-full bg-primary transition-all"
                 style={{ width: `${total > 0 ? (done / total) * 100 : 0}%` }}
@@ -187,13 +197,9 @@ export function UserInviteForm({
           </div>
           {done === total && (
             <p className="mt-2 text-xs">
-              {succeeded > 0 && (
-                <span className="text-primary">{succeeded} sent</span>
-              )}
+              {succeeded > 0 && <span className="text-primary">{succeeded} sent</span>}
               {succeeded > 0 && failed > 0 && <span className="text-muted-foreground"> · </span>}
-              {failed > 0 && (
-                <span className="text-destructive">{failed} failed</span>
-              )}
+              {failed > 0 && <span className="text-destructive">{failed} failed</span>}
             </p>
           )}
           {progress.results.filter((r) => !r.ok).length > 0 && (

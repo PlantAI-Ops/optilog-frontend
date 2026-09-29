@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import type { Tenant, TenantConfig, AdminPlant, Invitation, Role, SeedPreset } from "./shift-log";
+import type { AreaData, LineData, TeamData } from "@/components/admin/PlantSetupForm";
 
 /* -------------------------------------------------------------------------- */
 /*                              response types                                */
@@ -9,6 +10,11 @@ import type { Tenant, TenantConfig, AdminPlant, Invitation, Role, SeedPreset } f
 interface SeedResponse {
   plant_id: string;
   preset: string;
+  created: Record<string, number>;
+}
+
+interface ApplyConfigResponse {
+  plant_id: string;
   created: Record<string, number>;
 }
 
@@ -143,6 +149,22 @@ export function useSeedPlant(plantId: string, tenantId: string) {
   return useMutation({
     mutationFn: (data: { preset: SeedPreset; include_demo_data?: boolean }) =>
       api.post<SeedResponse>(`/admin/plants/${plantId}/seed`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "tenants", tenantId, "plants"] });
+    },
+  });
+}
+
+export function useApplyWizardConfig(plantId: string, tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      areas: AreaData[];
+      lines: LineData[];
+      teams: TeamData[];
+      globalShiftType: string;
+      customShiftName: string;
+    }) => api.post<ApplyConfigResponse>(`/admin/plants/${plantId}/setup`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "tenants", tenantId, "plants"] });
     },

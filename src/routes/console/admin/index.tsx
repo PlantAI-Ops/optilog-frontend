@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Loader2, Plus, X } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { TenantCard } from "@/components/admin/TenantCard";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useTenants, useCreateTenant } from "@/lib/admin-hooks";
 import { useShiftLog } from "@/lib/shift-log";
 
@@ -72,13 +73,17 @@ function AdminTenantsPage() {
       </div>
 
       {tenants.isLoading && (
-        <div className="flex items-center justify-center py-20">
+        <div className="flex items-center justify-center py-20" role="status">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="sr-only">Loading tenants</span>
         </div>
       )}
 
       {tenants.error && (
-        <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive">
+        <div
+          role="alert"
+          className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive"
+        >
           Failed to load tenants. {tenants.error.message}
         </div>
       )}
@@ -97,97 +102,90 @@ function AdminTenantsPage() {
       )}
 
       {/* Create tenant modal */}
-      {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-lg">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Create Tenant</h3>
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Tenant</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreate} className="space-y-3">
+            <div>
+              <label className="text-sm font-medium" htmlFor="tenant-name">
+                Name
+              </label>
+              <input
+                id="tenant-name"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium" htmlFor="tenant-email">
+                Contact email
+              </label>
+              <input
+                id="tenant-email"
+                type="email"
+                value={form.contact_email}
+                onChange={(e) => setForm((f) => ({ ...f, contact_email: e.target.value }))}
+                className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium" htmlFor="tenant-max-users">
+                  Max users
+                </label>
+                <input
+                  id="tenant-max-users"
+                  type="number"
+                  min={1}
+                  value={form.max_users}
+                  onChange={(e) => setForm((f) => ({ ...f, max_users: Number(e.target.value) }))}
+                  className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium" htmlFor="tenant-max-plants">
+                  Max plants
+                </label>
+                <input
+                  id="tenant-max-plants"
+                  type="number"
+                  min={1}
+                  value={form.max_plants}
+                  onChange={(e) => setForm((f) => ({ ...f, max_plants: Number(e.target.value) }))}
+                  className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+              </div>
+            </div>
+            {createTenant.isError && (
+              <p className="text-sm text-destructive" role="alert">
+                {createTenant.error.message}
+              </p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setShowCreate(false)}
-                className="text-muted-foreground hover:text-foreground"
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary"
               >
-                <X className="h-5 w-5" />
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={createTenant.isPending}
+                className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {createTenant.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Create
               </button>
             </div>
-            <form onSubmit={handleCreate} className="mt-4 space-y-3">
-              <div>
-                <label className="text-sm font-medium" htmlFor="tenant-name">
-                  Name
-                </label>
-                <input
-                  id="tenant-name"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium" htmlFor="tenant-email">
-                  Contact email
-                </label>
-                <input
-                  id="tenant-email"
-                  type="email"
-                  value={form.contact_email}
-                  onChange={(e) => setForm((f) => ({ ...f, contact_email: e.target.value }))}
-                  className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm font-medium" htmlFor="tenant-max-users">
-                    Max users
-                  </label>
-                  <input
-                    id="tenant-max-users"
-                    type="number"
-                    min={1}
-                    value={form.max_users}
-                    onChange={(e) => setForm((f) => ({ ...f, max_users: Number(e.target.value) }))}
-                    className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium" htmlFor="tenant-max-plants">
-                    Max plants
-                  </label>
-                  <input
-                    id="tenant-max-plants"
-                    type="number"
-                    min={1}
-                    value={form.max_plants}
-                    onChange={(e) => setForm((f) => ({ ...f, max_plants: Number(e.target.value) }))}
-                    className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  />
-                </div>
-              </div>
-              {createTenant.isError && (
-                <p className="text-sm text-destructive">{createTenant.error.message}</p>
-              )}
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCreate(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createTenant.isPending}
-                  className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {createTenant.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Create
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+          </form>
+        </DialogContent>
+      </Dialog>
     </ConsoleShell>
   );
 }

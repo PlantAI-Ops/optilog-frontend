@@ -1,0 +1,476 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-26T00:00:00.000Z",
+  "title": "Design System: OptiLog",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Safety Amber",
+        "canonical": "oklch(0.79 0.17 74)",
+        "tonalRamp": [
+          "oklch(0.15 0.119 74)",
+          "oklch(0.24 0.126 74)",
+          "oklch(0.34 0.134 74)",
+          "oklch(0.46 0.144 74)",
+          "oklch(0.58 0.153 74)",
+          "oklch(0.7 0.163 74)",
+          "oklch(0.83 0.163 74)",
+          "oklch(0.95 0.145 74)"
+        ]
+      },
+      "primary-foreground": {
+        "role": "primary",
+        "displayName": "Amber Ink",
+        "canonical": "oklch(0.19 0.03 60)",
+        "tonalRamp": [
+          "oklch(0.15 0.029 60)",
+          "oklch(0.24 0.029 60)",
+          "oklch(0.34 0.026 60)",
+          "oklch(0.46 0.023 60)",
+          "oklch(0.58 0.02 60)",
+          "oklch(0.7 0.017 60)",
+          "oklch(0.83 0.014 60)",
+          "oklch(0.95 0.012 60)"
+        ]
+      },
+      "record": {
+        "role": "secondary",
+        "displayName": "Emergency Stop Red",
+        "canonical": "oklch(0.65 0.24 25)",
+        "tonalRamp": [
+          "oklch(0.15 0.184 25)",
+          "oklch(0.24 0.194 25)",
+          "oklch(0.34 0.205 25)",
+          "oklch(0.46 0.219 25)",
+          "oklch(0.58 0.232 25)",
+          "oklch(0.7 0.229 25)",
+          "oklch(0.83 0.2 25)",
+          "oklch(0.95 0.175 25)"
+        ]
+      },
+      "record-foreground": {
+        "role": "secondary",
+        "displayName": "Signal White on Red",
+        "canonical": "oklch(0.99 0.004 250)",
+        "tonalRamp": [
+          "oklch(0.15 0.003 250)",
+          "oklch(0.24 0.003 250)",
+          "oklch(0.34 0.003 250)",
+          "oklch(0.46 0.003 250)",
+          "oklch(0.58 0.003 250)",
+          "oklch(0.7 0.003 250)",
+          "oklch(0.83 0.004 250)",
+          "oklch(0.95 0.004 250)"
+        ]
+      },
+      "destructive": {
+        "role": "tertiary",
+        "displayName": "Fault Red",
+        "canonical": "oklch(0.63 0.22 27)",
+        "tonalRamp": [
+          "oklch(0.15 0.171 27)",
+          "oklch(0.24 0.18 27)",
+          "oklch(0.34 0.19 27)",
+          "oklch(0.46 0.203 27)",
+          "oklch(0.58 0.215 27)",
+          "oklch(0.7 0.205 27)",
+          "oklch(0.83 0.18 27)",
+          "oklch(0.95 0.157 27)"
+        ]
+      },
+      "warning": {
+        "role": "tertiary",
+        "displayName": "Caution Lamp",
+        "canonical": "oklch(0.82 0.16 85)",
+        "tonalRamp": [
+          "oklch(0.15 0.11 85)",
+          "oklch(0.24 0.117 85)",
+          "oklch(0.34 0.124 85)",
+          "oklch(0.46 0.133 85)",
+          "oklch(0.58 0.142 85)",
+          "oklch(0.7 0.151 85)",
+          "oklch(0.83 0.158 85)",
+          "oklch(0.95 0.141 85)"
+        ]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "Running Green",
+        "canonical": "oklch(0.72 0.16 155)",
+        "tonalRamp": [
+          "oklch(0.15 0.117 155)",
+          "oklch(0.24 0.124 155)",
+          "oklch(0.34 0.132 155)",
+          "oklch(0.46 0.141 155)",
+          "oklch(0.58 0.15 155)",
+          "oklch(0.7 0.159 155)",
+          "oklch(0.83 0.143 155)",
+          "oklch(0.95 0.126 155)"
+        ]
+      },
+      "background": {
+        "role": "neutral",
+        "displayName": "Steel Black",
+        "canonical": "oklch(0.17 0.012 260)",
+        "tonalRamp": [
+          "oklch(0.15 0.012 260)",
+          "oklch(0.24 0.011 260)",
+          "oklch(0.34 0.01 260)",
+          "oklch(0.46 0.009 260)",
+          "oklch(0.58 0.008 260)",
+          "oklch(0.7 0.007 260)",
+          "oklch(0.83 0.006 260)",
+          "oklch(0.95 0.005 260)"
+        ]
+      },
+      "foreground": {
+        "role": "neutral",
+        "displayName": "Signal White",
+        "canonical": "oklch(0.98 0.004 250)",
+        "tonalRamp": [
+          "oklch(0.15 0.003 250)",
+          "oklch(0.24 0.003 250)",
+          "oklch(0.34 0.003 250)",
+          "oklch(0.46 0.003 250)",
+          "oklch(0.58 0.003 250)",
+          "oklch(0.7 0.003 250)",
+          "oklch(0.83 0.004 250)",
+          "oklch(0.95 0.004 250)"
+        ]
+      },
+      "card": {
+        "role": "neutral",
+        "displayName": "Console Plate",
+        "canonical": "oklch(0.235 0.014 258)",
+        "tonalRamp": [
+          "oklch(0.15 0.013 258)",
+          "oklch(0.24 0.014 258)",
+          "oklch(0.34 0.013 258)",
+          "oklch(0.46 0.011 258)",
+          "oklch(0.58 0.01 258)",
+          "oklch(0.7 0.008 258)",
+          "oklch(0.83 0.007 258)",
+          "oklch(0.95 0.006 258)"
+        ]
+      },
+      "secondary": {
+        "role": "neutral",
+        "displayName": "Recessed Well",
+        "canonical": "oklch(0.31 0.016 258)",
+        "tonalRamp": [
+          "oklch(0.15 0.015 258)",
+          "oklch(0.24 0.015 258)",
+          "oklch(0.34 0.016 258)",
+          "oklch(0.46 0.014 258)",
+          "oklch(0.58 0.012 258)",
+          "oklch(0.7 0.011 258)",
+          "oklch(0.83 0.009 258)",
+          "oklch(0.95 0.008 258)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted Plate",
+        "canonical": "oklch(0.29 0.014 258)",
+        "tonalRamp": [
+          "oklch(0.15 0.013 258)",
+          "oklch(0.24 0.014 258)",
+          "oklch(0.34 0.013 258)",
+          "oklch(0.46 0.012 258)",
+          "oklch(0.58 0.01 258)",
+          "oklch(0.7 0.009 258)",
+          "oklch(0.83 0.008 258)",
+          "oklch(0.95 0.006 258)"
+        ]
+      },
+      "muted-foreground": {
+        "role": "neutral",
+        "displayName": "Ash Text",
+        "canonical": "oklch(0.78 0.012 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.008 255)",
+          "oklch(0.24 0.009 255)",
+          "oklch(0.34 0.01 255)",
+          "oklch(0.46 0.01 255)",
+          "oklch(0.58 0.011 255)",
+          "oklch(0.7 0.012 255)",
+          "oklch(0.83 0.011 255)",
+          "oklch(0.95 0.01 255)"
+        ]
+      },
+      "accent": {
+        "role": "neutral",
+        "displayName": "Hover Slate",
+        "canonical": "oklch(0.34 0.018 258)",
+        "tonalRamp": [
+          "oklch(0.15 0.016 258)",
+          "oklch(0.24 0.017 258)",
+          "oklch(0.34 0.018 258)",
+          "oklch(0.46 0.016 258)",
+          "oklch(0.58 0.014 258)",
+          "oklch(0.7 0.012 258)",
+          "oklch(0.83 0.01 258)",
+          "oklch(0.95 0.009 258)"
+        ]
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Slate Line",
+        "canonical": "oklch(0.38 0.016 258)",
+        "tonalRamp": [
+          "oklch(0.15 0.014 258)",
+          "oklch(0.24 0.015 258)",
+          "oklch(0.34 0.016 258)",
+          "oklch(0.46 0.015 258)",
+          "oklch(0.58 0.013 258)",
+          "oklch(0.7 0.011 258)",
+          "oklch(0.83 0.01 258)",
+          "oklch(0.95 0.008 258)"
+        ]
+      },
+      "input": {
+        "role": "neutral",
+        "displayName": "Slate Line (inputs)",
+        "canonical": "oklch(0.38 0.016 258)",
+        "tonalRamp": [
+          "oklch(0.15 0.014 258)",
+          "oklch(0.24 0.015 258)",
+          "oklch(0.34 0.016 258)",
+          "oklch(0.46 0.015 258)",
+          "oklch(0.58 0.013 258)",
+          "oklch(0.7 0.011 258)",
+          "oklch(0.83 0.01 258)",
+          "oklch(0.95 0.008 258)"
+        ]
+      },
+      "ring": {
+        "role": "neutral",
+        "displayName": "Focus Amber",
+        "canonical": "oklch(0.79 0.17 74)",
+        "tonalRamp": [
+          "oklch(0.15 0.119 74)",
+          "oklch(0.24 0.126 74)",
+          "oklch(0.34 0.134 74)",
+          "oklch(0.46 0.144 74)",
+          "oklch(0.58 0.153 74)",
+          "oklch(0.7 0.163 74)",
+          "oklch(0.83 0.163 74)",
+          "oklch(0.95 0.145 74)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Floor screen titles only - login, greeting, wordmark moments. Weight 900 at 30px."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Floor section headers, stat numbers, the record puck label. Weight 900 at 24px (36px variant for stats)."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Console page headings, dialog titles, card titles. Weight 600 at 18px."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Floor prose at 16px/400; console body and meta at 14px/400-500."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Every field label and micro-label: uppercase, 12px, weight 700, +0.05em tracking, Ash Text."
+      },
+      "stat": {
+        "displayName": "Stat",
+        "purpose": "Console dashboard numbers in StatCard: 24px, weight 700, tabular-nums."
+      }
+    },
+    "shadows": [
+      {
+        "name": "resting-card",
+        "value": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+        "purpose": "Tailwind `shadow` on the shadcn Card primitive - the only resting surface that carries a shadow alongside its 1px border."
+      },
+      {
+        "name": "outline-rest",
+        "value": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+        "purpose": "Tailwind `shadow-sm` on outline/secondary buttons and the shadcn Input - a hairline lift, not a float."
+      },
+      {
+        "name": "overlay-lift",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Tailwind `shadow-lg` on dialog content and Sonner toasts, always paired with a full-bleed scrim. The only depth read as above the page."
+      },
+      {
+        "name": "record-glow",
+        "value": "0 0 {8-43}px rgba(239, 68, 68, {0.2-0.8})",
+        "purpose": "Inline, audio-reactive glow written by an AnalyserNode on the record puck while recording. Spread tracks input level."
+      }
+    ],
+    "motion": [
+      {
+        "name": "record-pulse",
+        "value": "shiftlog-pulse 1.4s ease-out infinite",
+        "purpose": "Expanding box-shadow ring around the record puck while recording (the `record-pulse` utility). The product's one high-amplitude moment."
+      },
+      {
+        "name": "waveform-pulse",
+        "value": "animate-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "purpose": "The 13 recording waveform bars; each bar carries a 70ms staggered animation-delay."
+      },
+      {
+        "name": "dialog-enter",
+        "value": "fade + zoom-in-95, 200ms ease-out",
+        "purpose": "Dialog and alert-dialog open/close via tw-animate-css data-state attributes."
+      },
+      {
+        "name": "state-transition",
+        "value": "color 150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Console hover/focus state changes (`transition-colors`). Floor controls deliberately do not hover."
+      },
+      {
+        "name": "press-scale",
+        "value": "transform 150ms, active:scale-95",
+        "purpose": "Floor press feedback: the record puck and other touch-first controls compress on press."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Floor Hero Button",
+      "kind": "button",
+      "refersTo": "button-floor-hero",
+      "description": "The floor's committing CTA - 80px tall, full width, weight 900 amber. Start Logging, Confirm, End shift.",
+      "html": "<button class=\"ds-btn-hero\">Start Logging</button>",
+      "css": ".ds-btn-hero { display: inline-flex; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 80px; padding: 0 32px; background: oklch(0.79 0.17 74); color: oklch(0.19 0.03 60); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif; font-size: 1.5rem; font-weight: 900; line-height: 1.333; border: none; border-radius: 26px; cursor: pointer; transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1), opacity 150ms ease; } .ds-btn-hero:hover { opacity: 0.92; } .ds-btn-hero:active { transform: scale(0.98); } .ds-btn-hero:focus-visible { outline: none; box-shadow: 0 0 0 2px oklch(0.17 0.012 260), 0 0 0 4px oklch(0.79 0.17 74); } .ds-btn-hero:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }"
+    },
+    {
+      "name": "Floor Secondary Button",
+      "kind": "button",
+      "refersTo": "button-floor-secondary",
+      "description": "The cancel/skip half of the Two-Button Footer - recessed well, 1px border, 56px, weight 700.",
+      "html": "<button class=\"ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; padding: 0 24px; background: oklch(0.31 0.016 258); color: oklch(0.98 0.004 250); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif; font-size: 16px; font-weight: 700; border: 1px solid oklch(0.38 0.016 258); border-radius: 22px; cursor: pointer; transition: background-color 150ms ease, border-color 150ms ease; } .ds-btn-secondary:hover { background: oklch(0.34 0.018 258); } .ds-btn-secondary:focus-visible { outline: none; border-color: oklch(0.79 0.17 74); box-shadow: 0 0 0 1px oklch(0.79 0.17 74); } .ds-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Console Primary Button",
+      "kind": "button",
+      "refersTo": "button-console-primary",
+      "description": "The shadcn console default - 36px, 12px radius, medium weight, colour-transition hover.",
+      "html": "<button class=\"ds-btn-primary\">Save changes</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 16px; background: oklch(0.79 0.17 74); color: oklch(0.19 0.03 60); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif; font-size: 14px; font-weight: 500; line-height: 1.25; border: none; border-radius: 12px; cursor: pointer; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), color 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-btn-primary:hover { background: color-mix(in oklch, oklch(0.79 0.17 74) 90%, transparent); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 1px oklch(0.79 0.17 74), 0 0 0 3px color-mix(in oklch, oklch(0.79 0.17 74) 40%, transparent); } .ds-btn-primary:active { background: color-mix(in oklch, oklch(0.79 0.17 74) 85%, transparent); } .ds-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Floor Input",
+      "kind": "input",
+      "refersTo": "input-floor",
+      "description": "Glove-sized field: 56px tall, 22px radius, recessed well, border shifts to amber on focus.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Production area</span><input class=\"ds-input-floor\" placeholder=\"Select line...\" /></label>",
+      "css": ".ds-field { display: block; } .ds-field-label { display: block; margin-bottom: 4px; color: oklch(0.78 0.012 255); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif; font-size: 12px; font-weight: 700; line-height: 1.333; letter-spacing: 0.05em; text-transform: uppercase; } .ds-input-floor { display: block; width: 100%; height: 56px; padding: 0 16px; background: oklch(0.31 0.016 258); color: oklch(0.98 0.004 250); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif; font-size: 18px; border: 1px solid oklch(0.38 0.016 258); border-radius: 22px; outline: none; transition: border-color 150ms ease; } .ds-input-floor::placeholder { color: oklch(0.78 0.012 255); } .ds-input-floor:hover { border-color: oklch(0.45 0.016 258); } .ds-input-floor:focus { border-color: oklch(0.79 0.17 74); } .ds-input-floor:disabled { opacity: 0.5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Console Input",
+      "kind": "input",
+      "refersTo": "input-console",
+      "description": "The shadcn field: 36px, 12px radius, transparent, hairline shadow, 1px amber ring on focus.",
+      "html": "<label class=\"ds-cfield\"><span class=\"ds-cfield-label\">Plant name</span><input class=\"ds-input-console\" placeholder=\"Search...\" /></label>",
+      "css": ".ds-cfield { display: block; } .ds-cfield-label { display: block; margin-bottom: 6px; color: oklch(0.98 0.004 250); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif; font-size: 14px; font-weight: 500; } .ds-input-console { display: block; width: 100%; height: 36px; padding: 0 12px; background: transparent; color: oklch(0.98 0.004 250); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif; font-size: 14px; border: 1px solid oklch(0.38 0.016 258); border-radius: 12px; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); outline: none; transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-input-console::placeholder { color: oklch(0.78 0.012 255); } .ds-input-console:hover { border-color: oklch(0.45 0.016 258); } .ds-input-console:focus-visible { border-color: oklch(0.79 0.17 74); box-shadow: 0 0 0 1px oklch(0.79 0.17 74); } .ds-input-console:disabled { opacity: 0.5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Floor Card",
+      "kind": "card",
+      "refersTo": "card-floor",
+      "description": "The floor's flat container with the CardLine label/value pair used by the audit card.",
+      "html": "<div class=\"ds-card-floor\"><p class=\"ds-card-floor-title\">Conveyor 3 - Jam</p><div class=\"ds-card-line\"><span class=\"ds-card-line-label\">Observation</span><span class=\"ds-card-line-value\">Belt stopped under load, no alarm on HMI</span></div><div class=\"ds-card-line\"><span class=\"ds-card-line-label\">Reported cause</span><span class=\"ds-card-line-value\">Product stack-up at the transfer</span></div></div>",
+      "css": ".ds-card-floor { background: oklch(0.235 0.014 258); color: oklch(0.98 0.004 250); border: 1px solid oklch(0.38 0.016 258); border-radius: 22px; padding: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif; } .ds-card-floor-title { margin: 0 0 12px; font-size: 24px; font-weight: 900; line-height: 1.25; } .ds-card-line + .ds-card-line { margin-top: 12px; } .ds-card-line-label { display: block; color: oklch(0.78 0.012 255); font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; } .ds-card-line-value { display: block; margin-top: 2px; font-size: 18px; line-height: 1.4; overflow-wrap: break-word; }"
+    },
+    {
+      "name": "Console Stat Card",
+      "kind": "card",
+      "refersTo": "stat-card",
+      "description": "Dashboard metric plate: uppercase label, 24px tabular value with a semantic tone, 12px hint.",
+      "html": "<div class=\"ds-stat-card ds-stat-card--success\"><span class=\"ds-stat-label\">Production achievement</span><span class=\"ds-stat-value\">94%</span><span class=\"ds-stat-hint\">18,420 of 19,600 units</span></div>",
+      "css": ".ds-stat-card { background: oklch(0.235 0.014 258); color: oklch(0.98 0.004 250); border: 1px solid oklch(0.38 0.016 258); border-radius: 18px; padding: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif; transition: border-color 150ms ease; } .ds-stat-card:hover { border-color: oklch(0.45 0.016 258); } .ds-stat-label { display: block; color: oklch(0.78 0.012 255); font-size: 12px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; } .ds-stat-value { display: block; margin-top: 8px; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.333; } .ds-stat-hint { display: block; margin-top: 4px; color: oklch(0.78 0.012 255); font-size: 12px; } .ds-stat-card--success .ds-stat-value { color: oklch(0.72 0.16 155); } .ds-stat-card--warning .ds-stat-value { color: oklch(0.82 0.16 85); } .ds-stat-card--danger .ds-stat-value { color: oklch(0.63 0.22 27); }"
+    },
+    {
+      "name": "Source Chip",
+      "kind": "chip",
+      "refersTo": "chip-source",
+      "description": "Uppercase 11px metadata tag for event source, shift status and category.",
+      "html": "<span class=\"ds-chip\">voice</span> <span class=\"ds-chip\">confirmed</span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; padding: 2px 8px; background: oklch(0.31 0.016 258); color: oklch(0.78 0.012 255); border: 1px solid oklch(0.38 0.016 258); border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; } .ds-chip:hover { color: oklch(0.98 0.004 250); }"
+    },
+    {
+      "name": "Console Nav Rail",
+      "kind": "nav",
+      "refersTo": null,
+      "description": "The 240px sticky console rail: amber wordmark, 14px-radius items, active state in the recessed well.",
+      "html": "<nav class=\"ds-nav\"><div class=\"ds-nav-brand\"><p class=\"ds-nav-wordmark\">OPTILOG</p><p class=\"ds-nav-caption\">Operations console</p></div><a class=\"ds-nav-item is-active\" href=\"#\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m12 14 4-4\"/><path d=\"M3.34 19a10 10 0 1 1 17.32 0\"/></svg>Dashboard</a><a class=\"ds-nav-item\" href=\"#\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M8 2v4\"/><path d=\"M16 2v4\"/><rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\"/><path d=\"M3 10h18\"/></svg>Shifts</a><a class=\"ds-nav-item\" href=\"#\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.5 12h17\"/><path d=\"m12 3.5 4 4-4 4\"/></svg>Events</a></nav>",
+      "css": ".ds-nav { display: flex; flex-direction: column; gap: 4px; width: 240px; padding: 16px 12px; background: oklch(0.235 0.014 258); border-right: 1px solid oklch(0.38 0.016 258); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif; } .ds-nav-brand { padding: 0 8px 20px; } .ds-nav-wordmark { margin: 0; color: oklch(0.79 0.17 74); font-size: 12px; font-weight: 900; letter-spacing: 0.2em; } .ds-nav-caption { margin: 4px 0 0; color: oklch(0.78 0.012 255); font-size: 12px; } .ds-nav-item { display: flex; align-items: center; gap: 12px; padding: 8px 12px; color: oklch(0.78 0.012 255); font-size: 14px; font-weight: 500; text-decoration: none; border-radius: 14px; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1), color 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-nav-item:hover { background: color-mix(in oklch, oklch(0.31 0.016 258) 60%, transparent); color: oklch(0.98 0.004 250); } .ds-nav-item.is-active { background: oklch(0.31 0.016 258); color: oklch(0.98 0.004 250); } .ds-nav-item:focus-visible { outline: 2px solid oklch(0.79 0.17 74); outline-offset: -2px; }"
+    },
+    {
+      "name": "Record Puck",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "The signature control: a 224px Emergency Stop Red circle that pulses while the microphone is live.",
+      "html": "<button class=\"ds-record-puck\" type=\"button\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"72\" height=\"72\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 19v3\"/><path d=\"M19 10v2a7 7 0 0 1-14 0v-2\"/><rect x=\"9\" y=\"2\" width=\"6\" height=\"13\" rx=\"3\"/></svg><span class=\"ds-record-label\">RECORD</span></button>",
+      "css": ".ds-record-puck { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 224px; height: 224px; background: oklch(0.65 0.24 25); color: oklch(0.99 0.004 250); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif; border: none; border-radius: 9999px; cursor: pointer; transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 150ms ease; } .ds-record-puck:hover { transform: scale(1.02); } .ds-record-puck:active { transform: scale(0.95); } .ds-record-puck:focus-visible { outline: none; box-shadow: 0 0 0 3px oklch(0.17 0.012 260), 0 0 0 6px oklch(0.79 0.17 74); } .ds-record-puck:disabled { opacity: 0.4; cursor: not-allowed; transform: none; } .ds-record-label { font-size: 24px; font-weight: 900; letter-spacing: 0.05em; } .ds-record-puck.is-recording { animation: ds-record-pulse 1.4s ease-out infinite; } @keyframes ds-record-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in oklch, oklch(0.65 0.24 25) 60%, transparent); } 70% { box-shadow: 0 0 0 40px color-mix(in oklch, oklch(0.65 0.24 25) 0%, transparent); } 100% { box-shadow: 0 0 0 0 color-mix(in oklch, oklch(0.65 0.24 25) 0%, transparent); } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Control Room at 3 a.m.",
+    "overview": "OptiLog looks the way a plant looks when the lights are down and one person is responsible for what happens next: dark steel surfaces, a single amber signal that means *this is the action*, and no ornament anywhere. The interface is instrumentation. It reports state and gets out of the way. Nothing is styled to be liked; everything is styled to be read at arm's length, in a noisy room, by someone who has thirty seconds and gloves on.\n\nThe system runs on two densities because it serves two scenes. The **floor world** - login, start shift, record, confirm, timeline, end shift - is a single 448px column of oversized, weight-900 controls with radii generous enough to read as physical buttons. The **console world** - dashboard, events, shifts, RCA, admin - is a dense desktop shell of 1px-bordered plates, 14-16px text and restrained 12-18px radii. They share one OKLCH palette, one radius base and one type stack; only the scale changes. Colour never decorates: amber is the action, red is the recording, and green/yellow/red report facts that are actually true in the system.\n\nConfirmed visual rejection: consumer-app softness - pastel gradients, playful illustration, airy SaaS whitespace, and anything that reads as friendly rather than dependable.",
+    "keyCharacteristics": [
+      "Flat surfaces; depth comes from a 1px border plus a step in the surface ladder.",
+      "Weight contrast does the hierarchy work: 900 on the floor, 600/700 in the console.",
+      "Colour is semantic and rationed; the palette is near-monochrome until a signal fires.",
+      "Two densities, one system: `rounded-2xl/3xl` and 56-80px targets on the floor, `rounded-xl/lg` and 36px targets in the console.",
+      "Every field label is uppercase, 12px, weight 700, wide-tracked.",
+      "Numbers that get compared are tabular."
+    ],
+    "rules": [
+      { "name": "The Amber Rarity Rule", "body": "Safety Amber marks the one thing to do next. If two amber elements compete on a screen, one of them is wrong.", "section": "colors" },
+      { "name": "The Signal-Only Rule", "body": "Green, yellow and red only appear where they report system truth - a real status, a real count, a real connection. Never as an accent, a hover, or a category colour.", "section": "colors" },
+      { "name": "The One-Format Rule", "body": "Colour is authored in OKLCH only. New semantic tokens are added to `:root`, to `.dark`, and registered in `@theme inline` - three places, one value.", "section": "colors" },
+      { "name": "The 900 Rule", "body": "Anything a person must read while standing - floor headlines, button labels, timestamps, stat numbers - is weight 900. Nothing on the floor is lighter than 500.", "section": "typography" },
+      { "name": "The Uppercase Micro-Label Rule", "body": "Field labels are always uppercase, 12px, weight 700, +0.05em tracking, in Ash Text. A 12px label in sentence case is a defect.", "section": "typography" },
+      { "name": "The Tabular Numeral Rule", "body": "Any number that will be compared down a column or across a row - achievement %, downtime, counts, clock times - is set with `tabular-nums`.", "section": "typography" },
+      { "name": "The Reach Rule", "body": "On the floor every text control is at least 56px tall and every primary CTA is 64-80px; icon controls are at least 44px. Gloved hands, glare and a moving line are the design conditions, not an edge case.", "section": "layout" },
+      { "name": "The Bottom-Anchor Rule", "body": "The floor's committing action lives at the bottom of the column, full width, in thumb reach - never in a header, a dropdown, or a fifth card down.", "section": "layout" },
+      { "name": "The Flat-By-Default Rule", "body": "A new surface starts flat: `border` plus a surface step. Shadow is earned only by something that floats above the page.", "section": "elevation" },
+      { "name": "The One-Pixel Rule", "body": "Every border is 1px. Depth comes from the surface step, never from a heavier line or a coloured side bar.", "section": "shapes" },
+      { "name": "The Radius Split Rule", "body": "Floor surfaces are 22px or wider, console surfaces are 18px or less. Never carry a floor radius into the console or vice versa.", "section": "shapes" }
+    ],
+    "dos": [
+      "**Do** author colour in OKLCH in `src/styles.css`, and register every new semantic token in all three places: `:root`, `.dark`, and `@theme inline`.",
+      "**Do** set floor copy at weight 900 for anything read standing up, and console copy at 14-16px with weight 400-600.",
+      "**Do** make every floor text control at least 56px and every floor icon control at least 44px; hero CTAs are 64-80px.",
+      "**Do** label every field `text-xs font-bold uppercase tracking-wider text-muted-foreground`, placed above the control.",
+      "**Do** apply `tabular-nums` to any number compared across rows or columns.",
+      "**Do** express depth with a 1px `border-border` plus a surface step (`background` to `card` to `secondary`).",
+      "**Do** tint status banners at 10% fill / 40% border (`bg-warning/10 border-warning/40`, `bg-destructive/10 border-destructive/40`).",
+      "**Do** keep Observation, Reported cause, Suspected cause, Verified cause and Action taken as separately labelled blocks in every surface that shows them.",
+      "**Do** keep the two-density split: floor `rounded-2xl`/`rounded-3xl` with 56-80px targets, console `rounded-xl`/`rounded-lg` with 36px targets.",
+      "**Do** reserve `shadow-lg` for floating layers and `transition-colors` for console hover states."
+    ],
+    "donts": [
+      "**Don't** introduce hex, `rgb()`, or HSL colour literals - OKLCH is the project's normative format. (One existing exception: the record puck's inline audio glow is `rgba(239, 68, 68, alpha)`; new work stays on tokens.)",
+      "**Don't** use `bg-info`, `text-info` or `border-info` - `--color-info` is not defined, so those utilities silently do nothing. Use `primary`, `warning` or `destructive`.",
+      "**Don't** render a status colour as decoration. Running Green, Caution Lamp and Fault Red report real system state only.",
+      "**Don't** give floor controls hover-only affordances; the floor is touch-first and has no pointer.",
+      "**Don't** add a resting shadow to a new surface - border plus surface step.",
+      "**Don't** exceed 1px on a border, and never use a coloured `border-left` / `border-right` rule as an accent.",
+      "**Don't** set a 12px label in sentence case, or replace the uppercase label with a placeholder.",
+      "**Don't** collapse Observation / Reported cause / Verified cause into a single description field.",
+      "**Don't** put the floor's committing action anywhere but the bottom of the column, full width.",
+      "**Don't** animate at record-puck amplitude anywhere else - one expressive moment per screen, maximum."
+    ]
+  }
+}

@@ -490,27 +490,39 @@ export function useShiftsMonth(plantId: string | undefined, month: string) {
 export interface MyEvent {
   id: string;
   timestamp: string;
-  event_type: string;
+  line_id: string;
+  line_name: string;
+  asset_id: string;
   asset_name: string;
-  subsystem: string;
+  shift_id: string;
+  team_id: string;
+  team_name: string;
+  event_type: string;
+  category: string;
+  severity: string;
+  description: string;
+  status: string;
+  source: string;
+  duration_seconds: number;
   observation: string;
   reported_cause: string;
   suspected_cause: string;
   verified_cause: string;
   action_taken: string;
-  severity: string;
-  status: string;
-  duration_seconds: number | null;
-  transcript: string;
-  source: string;
-  logged_by: string;
-  recording_id: string | null;
+  action: string;
+  source_record_id: string;
+  evidence: any[];
+  incident_id: string;
 }
 
-export function useMyEvents(plantId: string | undefined, date: string) {
+export function useMyEvents(plantId: string | undefined, date: string, shiftId?: string) {
   return useQuery({
-    queryKey: ["my-events", plantId, date],
-    queryFn: () => api.get<MyEvent[]>(`/plants/${plantId}/my-events?date=${date}`),
+    queryKey: ["plant", plantId, "my-events", date, shiftId],
+    queryFn: () => {
+      const params = new URLSearchParams({ date });
+      if (shiftId) params.set("shift_id", shiftId);
+      return api.get<MyEvent[]>(`/plants/${plantId}/my-events?${params.toString()}`);
+    },
     enabled: !!plantId,
     staleTime: STALE_TIME,
   });

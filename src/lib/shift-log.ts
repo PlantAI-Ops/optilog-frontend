@@ -230,6 +230,7 @@ export async function login(email: string, password: string): Promise<void> {
     setRefreshToken(res.refresh_token);
     const user = await api.get<User>("/auth/me");
     setState({ user, loading: false });
+    fetchEventsFromServer(user);
   } catch (e: unknown) {
     const raw = e instanceof Error ? e.message : "Login failed";
     let message: string;
@@ -256,6 +257,7 @@ export async function restoreSession(): Promise<void> {
   try {
     const user = await api.get<User>("/auth/me");
     setState({ user, loading: false });
+    fetchEventsFromServer(user);
   } catch (e: unknown) {
     clearToken();
     setState({ user: null, loading: false });
@@ -408,7 +410,7 @@ export function mapMyEventToShiftEvent(e: MyEvent): ShiftEvent {
     id: e.id,
     event_type: e.event_type ?? "",
     asset: e.asset_name ?? "",
-    subsystem: e.subsystem ?? "",
+    subsystem: "",
     timestamp: e.timestamp,
     duration_minutes: e.duration_seconds != null ? Math.round(e.duration_seconds / 60) : null,
     observation: e.observation ?? "",
@@ -420,10 +422,9 @@ export function mapMyEventToShiftEvent(e: MyEvent): ShiftEvent {
     status: (e.status as EventStatus) || "draft",
     source: e.source === "voice" ? "voice" : "manual",
     confidence: 1,
-    transcript: e.transcript ?? "",
+    transcript: "",
     sync: "synced",
-    logged_by: e.logged_by ?? "",
-    ...(e.recording_id ? { recording_id: e.recording_id } : {}),
+    logged_by: "",
   };
 }
 
@@ -435,6 +436,18 @@ export function mergeEvents(serverEvents: MyEvent[]) {
     if (newEvents.length === 0) return s;
     return { events: [...s.events, ...newEvents] };
   });
+}
+
+async function fetchEventsFromServer(user: User) {
+  const plantId = user.plant_ids?.[0];
+  if (!plantId) return;
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const events = await api.get<MyEvent[]>(`/plants/${plantId}/my-events?date=${today}`);
+    mergeEvents(events);
+  } catch {
+    /* non-critical — events will load on timeline navigation */
+  }
 }
 
 export function formatTime(iso: string) {

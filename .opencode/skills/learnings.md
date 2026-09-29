@@ -593,3 +593,43 @@ const updateRing = () => {
 - The old `useShiftOptions` hook was deleted — any remaining references cause `ReferenceError` at runtime
 - `carriedOver.data?.open_issues` is `CarriedOverIssue[]`, not `string[]` — must map for display
 - Backend must implement `GET /plants/{id}/shifts/current` for this to work — frontend provides the spec, backend implements
+
+---
+
+## 2026-09-26: DESIGN.md generated (impeccable document, scan mode)
+
+**Context:** No DESIGN.md existed; PRODUCT.md did. Ran scan mode over the shipped code.
+
+**Decisions:**
+- Canonical colour format stays **OKLCH** (the CSS file mandates it). Frontmatter carries the exact oklch strings; prose never restates a different format.
+- Documented the system as **two densities in one palette**: floor world (AppShell, max-w-md, rounded-2xl/3xl, 56-80px targets, weight 900) vs console world (ConsoleShell, rounded-xl/lg, 36px shadcn controls, weight 500-700).
+- Creative North Star chosen with the user: "The Control Room at 3 a.m."; depth philosophy recorded as flat/border-defined.
+- Colour names adopted: Safety Amber, Emergency Stop Red, Steel Black, Console Plate, Recessed Well, Slate Line, Ash Text, Signal White, Running Green, Caution Lamp, Fault Red.
+- Real font stack recorded from `node_modules/tailwindcss/theme.css`: `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial, sans-serif`. No webfont is loaded.
+- Sidecar written to `.impeccable/design.json` (schemaVersion 2) with 17 colorMeta ramps (gamut-clamped OKLCH via script), 10 self-contained shadow-DOM component snippets, shadows/motion/breakpoints, and narrative mapped verbatim from DESIGN.md.
+
+**Gotchas:**
+- `bg-info` / `text-info` / `border-info` are used in `src/routes/index.tsx:208-209` but `--color-info` is **never defined** -- those Tailwind utilities silently do nothing. Recorded as a Don't in DESIGN.md; a code fix is still pending.
+- The record puck's inline audio glow hardcodes `rgba(239, 68, 68, a)` instead of the `--record` token.
+- `components.json` claims a full shadcn set, but outside `src/components/ui/` only `input`, `label`, `checkbox` and `calendar` are imported -- the real visual system is hand-rolled Tailwind in `src/routes` and the two shells.
+- shadcn `Card` carries `border` + `shadow` together (Tailwind `shadow` = `0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)`); every other surface is border-only.
+- **Never edit text files with PowerShell `Get-Content`/`Set-Content`** -- PS 5.1 re-encodes without a BOM and mangles every multi-byte character, plus leaves a UTF-8 BOM. It corrupted DESIGN.md once this session; the file was rewritten with the Write tool and the BOM stripped. Use the Write/Edit tools, or `.NET` byte APIs if you must script it.
+- The Write tool also emits a UTF-8 BOM, which must be stripped from files that start a YAML/JSON document (some parsers reject it).
+
+---
+
+## 2026-09-26: Critique of `src/routes/console/admin` + P0 wizard hardening
+
+**Context:** First `impeccable critique` run for this target (slug `src-routes-console-admin`). Score **19/40 (Poor)**. Two isolated sub-agents (A: design review, B: detector); browser overlay skipped — no browser automation in this session. Snapshot: `.impeccable/critique/2026-09-26T21-39-51Z__src-routes-console-admin.md`.
+
+**Decisions (P0 data safety, `harden`):**
+- Wizard step 0 now **updates instead of re-creating**: `handleNext` branches on `plantId` and PATCHes via `useUpdatePlant` (the hook already existed in `admin-hooks.ts` and was imported by nothing).
+- Added `setupApplied` to `WizardData` (persisted through localStorage resume). Once config/preset seeding succeeds, `handleNext` at step 4 short-circuits to step 5 and **Back is disabled** — no re-seed, no re-apply.
+- `handleStartFresh` **keeps** an existing `plantId` instead of nulling it: nulling made "Start Fresh" the new duplicate-plant path, since the next step-0 Next would POST again. Non-destructive beats an unconfirmed delete.
+- "Skip" mode deliberately does NOT set `setupApplied`, so the user can still go Back and pick a real mode (nothing was written).
+
+**Gotchas:**
+- `tsc --noEmit` has **pre-existing** failures in `src/routes/console/integrations.tsx` (TS7053) and `src/routes/index.tsx` (SpeechRecognition types) — unrelated to this work; do not treat as a regression.
+- The file had pre-existing prettier drift; `npx eslint <file>` fails the build on it. Run `npx prettier --write <file>` on any file you touch here, then re-lint.
+- Repo temp-dir gotcha: `C:\Users\MY PC~1\...` (with a space) does not resolve; `$env:TEMP` gives `C:\Users\MYPC~1\AppData\Local\Temp`, and `Remove-Item -LiteralPath` on that short path fails — use `[System.IO.File]::Delete()`.
+- The whole wizard resume/seed-config feature was already uncommitted before this session, so `git diff` on `OnboardingWizard.tsx` shows far more than the hardening changes. Do not commit unless asked.

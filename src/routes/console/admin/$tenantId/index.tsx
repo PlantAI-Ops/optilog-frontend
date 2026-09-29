@@ -1,16 +1,15 @@
 import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Loader2, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { TrialStatusBadge } from "@/components/admin/TrialStatusBadge";
 import { UserInviteForm, type InviteResult } from "@/components/admin/UserInviteForm";
+import { CsvInviteUpload } from "@/components/admin/CsvInviteUpload";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api } from "@/lib/api";
 import {
   useTenant,
   useTenantPlants,
-  useCreatePlant,
   useUpdatePlant,
   useDeletePlant,
   useTenantInvitations,
@@ -40,119 +39,7 @@ export const Route = createFileRoute("/console/admin/$tenantId/")({
 });
 
 /* -------------------------------------------------------------------------- */
-/*                          inline plant create form                          */
-/* -------------------------------------------------------------------------- */
-
-type SeedPreset = "none" | "minimal" | "standard" | "full";
-
-const SEED_PRESETS: { value: SeedPreset; label: string; desc: string }[] = [
-  { value: "none", label: "Blank", desc: "Start empty" },
-  { value: "minimal", label: "Minimal", desc: "1 area, 1 line, 2 teams" },
-  { value: "standard", label: "Standard", desc: "2 areas, 4 lines, 6 teams" },
-  { value: "full", label: "Full", desc: "3 areas, 6 lines, 8 teams" },
-];
-
-function PlantCreateForm({
-  onSubmit,
-  onCancel,
-  isPending,
-}: {
-  onSubmit: (data: { name: string; location: string; timezone: string; preset: SeedPreset }) => void;
-  onCancel: () => void;
-  isPending: boolean;
-}) {
-  const [name, setName] = useState("");
-  const [location, setLocation] = useState("");
-  const [timezone, setTimezone] = useState("UTC");
-  const [preset, setPreset] = useState<SeedPreset>("none");
-
-  return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <h3 className="mb-3 text-sm font-semibold">Add Plant</h3>
-      <div className="space-y-3">
-        <div>
-          <Label htmlFor="plant-name">Plant name</Label>
-          <Input
-            id="plant-name"
-            placeholder="e.g. Factory Alpha"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="mt-1"
-            required
-          />
-        </div>
-        <div>
-          <Label htmlFor="plant-location">Location</Label>
-          <Input
-            id="plant-location"
-            placeholder="e.g. Lagos, Nigeria"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            className="mt-1"
-          />
-        </div>
-        <div>
-          <Label htmlFor="plant-timezone">Timezone</Label>
-          <select
-            id="plant-timezone"
-            value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
-            className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            {TIMEZONES.map((tz) => (
-              <option key={tz} value={tz}>
-                {tz}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <Label>Starting data</Label>
-          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {SEED_PRESETS.map((p) => (
-              <button
-                key={p.value}
-                type="button"
-                onClick={() => setPreset(p.value)}
-                className={`rounded-lg border p-2 text-left transition-colors ${
-                  preset === p.value
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:bg-secondary"
-                }`}
-              >
-                <p className="text-xs font-medium">{p.label}</p>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">{p.desc}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="mt-4 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (name.trim()) onSubmit({ name: name.trim(), location, timezone, preset });
-          }}
-          disabled={isPending || !name.trim()}
-          className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Create Plant
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/*                          inline plant edit form                            */
+/*                          inline plant edit form                             */
 /* -------------------------------------------------------------------------- */
 
 function PlantEditForm({
@@ -260,7 +147,9 @@ function PlantCard({
           isPending={updatePlant.isPending}
         />
         {updatePlant.isError && (
-          <p className="mt-2 text-xs text-destructive">{updatePlant.error.message}</p>
+          <p className="mt-2 text-xs text-destructive" role="alert">
+            {updatePlant.error.message}
+          </p>
         )}
       </div>
     );
@@ -309,36 +198,18 @@ function PlantCard({
 
 function TenantDetailPage() {
   const { tenantId } = Route.useParams();
+  const navigate = useNavigate();
   const tenant = useTenant(tenantId);
   const plants = useTenantPlants(tenantId);
-  const createPlant = useCreatePlant(tenantId);
   const deletePlant = useDeletePlant(tenantId);
   const invitations = useTenantInvitations(tenantId);
   const inviteUser = useInviteUser(tenantId);
   const revokeInvitation = useRevokeInvitation(tenantId);
-  const [showCreate, setShowCreate] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [inviteMode, setInviteMode] = useState<"manual" | "csv">("manual");
 
   const loading = tenant.isLoading || plants.isLoading || invitations.isLoading;
   const error = tenant.error || plants.error || invitations.error;
-
-  const handleCreatePlant = async (data: {
-    name: string;
-    location: string;
-    timezone: string;
-    preset: SeedPreset;
-  }) => {
-    const { preset, ...plantData } = data;
-    const newPlant = await createPlant.mutateAsync(plantData);
-    setShowCreate(false);
-    if (preset !== "none") {
-      await api.post(`/admin/plants/${newPlant.id}/seed`, {
-        preset,
-        include_demo_data: false,
-      });
-      plants.refetch();
-    }
-  };
 
   return (
     <ConsoleShell
@@ -346,13 +217,17 @@ function TenantDetailPage() {
       {...(tenant.data ? { subtitle: `@${tenant.data.slug}` } : {})}
     >
       {loading && (
-        <div className="flex items-center justify-center py-20">
+        <div className="flex items-center justify-center py-20" role="status">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="sr-only">Loading tenant details</span>
         </div>
       )}
 
       {error && (
-        <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive">
+        <div
+          role="alert"
+          className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive"
+        >
           Failed to load tenant. {(tenant.error || plants.error || invitations.error)?.message}
         </div>
       )}
@@ -383,18 +258,13 @@ function TenantDetailPage() {
           <div className="mb-6 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setShowCreate(!showCreate)}
+              onClick={() =>
+                navigate({ to: "/console/admin/$tenantId/onboard", params: { tenantId } })
+              }
               className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
             >
               <Plus className="h-3.5 w-3.5" /> Add Plant
             </button>
-            <Link
-              to="/console/admin/$tenantId/onboard"
-              params={{ tenantId }}
-              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary"
-            >
-              <Plus className="h-3.5 w-3.5" /> Onboard Wizard
-            </Link>
             <button
               type="button"
               onClick={() => setShowInvite(!showInvite)}
@@ -404,39 +274,67 @@ function TenantDetailPage() {
             </button>
           </div>
 
-          {/* Create plant form */}
-          {showCreate && (
-            <div className="mb-6">
-              <PlantCreateForm
-                onSubmit={handleCreatePlant}
-                onCancel={() => setShowCreate(false)}
-                isPending={createPlant.isPending}
-              />
-              {createPlant.isError && (
-                <p className="mt-2 text-sm text-destructive">{createPlant.error.message}</p>
-              )}
-            </div>
-          )}
-
           {/* Invite form */}
           {showInvite && (
             <div className="mb-6 rounded-xl border border-border bg-card p-4">
               <h3 className="mb-3 text-sm font-semibold">Invite Users to {tenant.data.name}</h3>
-              <UserInviteForm
-                plants={plants.data ?? []}
-                onInvite={async (data): Promise<InviteResult> => {
-                  try {
-                    await inviteUser.mutateAsync(data);
-                    return { email: data.email, ok: true };
-                  } catch (err) {
-                    return {
-                      email: data.email,
-                      ok: false,
-                      error: err instanceof Error ? err.message : "Unknown error",
-                    };
-                  }
-                }}
-              />
+              <div className="mb-4 flex gap-1 rounded-lg border border-border bg-secondary/50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setInviteMode("manual")}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    inviteMode === "manual"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Manual
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInviteMode("csv")}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    inviteMode === "csv"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  CSV Upload
+                </button>
+              </div>
+              {inviteMode === "manual" ? (
+                <UserInviteForm
+                  plants={plants.data ?? []}
+                  onInvite={async (data): Promise<InviteResult> => {
+                    try {
+                      await inviteUser.mutateAsync(data);
+                      return { email: data.email, ok: true };
+                    } catch (err) {
+                      return {
+                        email: data.email,
+                        ok: false,
+                        error: err instanceof Error ? err.message : "Unknown error",
+                      };
+                    }
+                  }}
+                />
+              ) : (
+                <CsvInviteUpload
+                  plants={plants.data ?? []}
+                  onInvite={async (data): Promise<InviteResult> => {
+                    try {
+                      await inviteUser.mutateAsync(data);
+                      return { email: data.email, ok: true };
+                    } catch (err) {
+                      return {
+                        email: data.email,
+                        ok: false,
+                        error: err instanceof Error ? err.message : "Unknown error",
+                      };
+                    }
+                  }}
+                />
+              )}
             </div>
           )}
 
@@ -460,11 +358,11 @@ function TenantDetailPage() {
                   />
                 ))}
               </div>
-            ) : !showCreate ? (
+            ) : (
               <p className="text-sm text-muted-foreground">
-                No plants yet. Click "Add Plant" to create one, or use the "Onboard Wizard" for guided setup.
+                No plants yet. Click "Add Plant" to set one up.
               </p>
-            ) : null}
+            )}
           </div>
 
           {/* Invitations */}
@@ -487,6 +385,7 @@ function TenantDetailPage() {
                       </div>
                       <button
                         type="button"
+                        aria-label={`Revoke invitation for ${inv.email}`}
                         onClick={() => revokeInvitation.mutate(inv.id)}
                         disabled={revokeInvitation.isPending}
                         className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
