@@ -32,6 +32,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import {
+  inPlantScope,
   useCreateTeam,
   usePlantLinesByArea,
   usePlantTeamsDetail,
@@ -471,7 +472,8 @@ export function LayoutBoard() {
     sortTeams(teams.filter((t) => t.assigned_line_ids?.includes(lineId)));
 
   const assignedIds = new Set(teams.flatMap((t) => memberIdsOf(t)));
-  const poolUsers = (directory.data ?? []).filter((u) => u.active && !assignedIds.has(u.id));
+  const activeUsers = (directory.data ?? []).filter((u) => u.active && !assignedIds.has(u.id));
+  const poolUsers = activeUsers.filter((u) => inPlantScope(u, plantId));
   const poolQ = poolSearch.trim().toLowerCase();
   const filteredPool = poolQ
     ? poolUsers.filter((u) =>
@@ -831,7 +833,8 @@ export function LayoutBoard() {
               </span>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Drag someone onto a team to assign them; drag them back here to unassign.
+              Drag someone onto a team to assign them; drag them back here to unassign. Only people
+              in this plant (or with no plant yet) are listed.
             </p>
             <input
               type="text"
@@ -855,7 +858,9 @@ export function LayoutBoard() {
                   {poolUsers.length === 0
                     ? directory.isLoading
                       ? "Loading people…"
-                      : "Everyone is assigned to a team."
+                      : activeUsers.length > 0
+                        ? "No unassigned people in this plant."
+                        : "Everyone is assigned to a team."
                     : `No people match “${poolSearch.trim()}”.`}
                 </p>
               ) : null}

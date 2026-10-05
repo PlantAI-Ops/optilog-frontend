@@ -623,6 +623,18 @@ export interface DirectoryUser {
   email: string;
   role: string;
   active: boolean;
+  /** Plants this user is assigned to. Optional so an older backend that omits
+   *  it degrades to showing everyone (plant filtering skips absent fields). */
+  plant_ids?: string[];
+}
+
+/** Who the Layout board and member pickers may offer for THIS plant: people
+ *  already assigned to it, plus tenant users with no plant yet. Users scoped
+ *  to other plants stay in the tenant but off the board. A missing plant_ids
+ *  field (older backend) keeps the user visible so the pool never empties. */
+export function inPlantScope(u: DirectoryUser, plantId: string | undefined): boolean {
+  if (u.plant_ids === undefined || u.plant_ids.length === 0) return true;
+  return !!plantId && u.plant_ids.includes(plantId);
 }
 
 /** Tenant user directory for team-member pickers. GET /users requires
