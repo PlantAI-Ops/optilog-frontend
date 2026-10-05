@@ -3,9 +3,10 @@ import type { Tenant } from "@/lib/shift-log";
 import { TrialStatusBadge } from "./TrialStatusBadge";
 
 export function TenantCard({ tenant }: { tenant: Tenant }) {
+  const now = typeof window !== "undefined" ? Date.now() : new Date("2024-01-01").getTime();
   const daysLeft =
     tenant.status === "trial" && tenant.trial_ends_at
-      ? Math.max(0, Math.ceil((new Date(tenant.trial_ends_at).getTime() - Date.now()) / 86400000))
+      ? Math.max(0, Math.ceil((new Date(tenant.trial_ends_at).getTime() - now) / 86400000))
       : null;
 
   return (

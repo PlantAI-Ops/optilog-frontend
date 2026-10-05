@@ -299,6 +299,32 @@ export function useLines(plantId: string | undefined) {
   });
 }
 
+export interface AreaLineGroup {
+  area: Area;
+  lines: Line[];
+}
+
+/** Lines grouped by their area. The plant-level GET /plants/{id}/lines omits
+ * area_id (see LAYOUT_SPEC A8), so this uses the area-nested
+ * GET /assets/areas/{id}/lines per area, fetched in parallel. */
+export function usePlantLinesByArea(plantId: string | undefined) {
+  return useQuery({
+    queryKey: ["dashboard", plantId, "lines-by-area"],
+    queryFn: async () => {
+      const areas = await api.get<Area[]>(`/plants/${plantId}/areas`);
+      const groups = await Promise.all(
+        areas.map(async (area) => ({
+          area,
+          lines: await api.get<Line[]>(`/assets/areas/${area.id}/lines`),
+        })),
+      );
+      return groups as AreaLineGroup[];
+    },
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
+}
+
 export function useAssets(plantId: string | undefined) {
   return useQuery({
     queryKey: ["dashboard", plantId, "assets"],
@@ -314,6 +340,389 @@ export function useTeams(plantId: string | undefined) {
     queryFn: () => api.get<Team[]>(`/plants/${plantId}/teams`),
     enabled: !!plantId,
     staleTime: STALE_TIME,
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/*                   plant-wide "current shift" + team detail                 */
+/* -------------------------------------------------------------------------- */
+
+export interface NowTeam {
+  id: string;
+  name: string;
+  supervisor: { id: string; name: string; role: string } | null;
+  member_count: number;
+}
+
+export interface CurrentShift {
+  shift_type: string;
+  start_hour: number;
+  end_hour: number;
+  /** ISO timestamps (UTC) of the active window. */
+  start: string;
+  end: string;
+  date: string;
+  /** The single team working this shift (rotation-resolved), if any. */
+  team: NowTeam | null;
+  source: "rotation" | "pattern" | string;
+}
+
+export interface ShiftsNowResponse {
+  /** null when no shift-pattern window matches the current hour. */
+  current_shift: CurrentShift | null;
+}
+
+/**
+ * Plant-wide "what is running right now" — the active shift window plus the
+ * rotation-resolved team working it (backend: single-team model). Read-only
+ * and side-effect free (unlike the mobile /shifts/current). Polls every 60s;
+ * `retry: false` so a missing endpoint degrades to hidden UI.
+ */
+export function useShiftsNow(plantId: string | undefined) {
+  return useQuery({
+    queryKey: ["dashboard", plantId, "shifts-now"],
+    queryFn: () => api.get<ShiftsNowResponse>(`/plants/${plantId}/shifts/now`),
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+    refetchInterval: 60_000,
+    retry: false,
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/*                         shift pattern (7-day schedule)                     */
+/* -------------------------------------------------------------------------- */
+
+export interface PatternDay {
+  date: string;
+  shift_type: "morning" | "afternoon" | "night" | "day" | "off" | null;
+  /** "HH:MM" local plant time; null when off/undetermined. */
+  start: string | null;
+  end: string | null;
+  /** Materialized shift document, when one exists for this slot. */
+  shift_id: string | null;
+  status: string | null;
+  /** Per-day override applied over the computed pattern, when one exists. */
+  override_id?: string | null;
+}
+
+export interface PatternTeam {
+  /** Real team id, or "track:{i}" for a synthetic crew track (no teams yet). */
+  team_id: string;
+  team_name: string;
+  supervisor_name: string | null;
+  shift_config: Record<string, unknown> | null;
+  /** "team" for real teams, "track" for generated crew rows. Absent = team. */
+  kind?: "team" | "track";
+  days: PatternDay[];
+}
+
+export interface ShiftsPatternResponse {
+  from: string;
+  days: number;
+  timezone: string;
+  teams: PatternTeam[];
+}
+
+/**
+ * Computed multi-day shift pattern per team (GET /plants/{id}/shifts/pattern).
+ * Strictly read-only server-side; `retry: false` so the Schedule page degrades
+ * to its empty state until the backend endpoint ships.
+ */
+export function useShiftsPattern(plantId: string | undefined, from: string, days: number) {
+  return useQuery({
+    queryKey: ["dashboard", plantId, "shifts-pattern", from, days],
+    queryFn: () =>
+      api.get<ShiftsPatternResponse>(`/plants/${plantId}/shifts/pattern?from=${from}&days=${days}`),
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/*                    shift pattern CRUD + overrides + rotation                */
+/* -------------------------------------------------------------------------- */
+
+export interface ShiftPattern {
+  id: string;
+  plant_id: string;
+  line_id: string | null;
+  shift_type: string;
+  start_hour: number;
+  end_hour: number;
+  /** 0 = Monday … 6 = Sunday. */
+  days_of_week: number[];
+  active: boolean;
+}
+
+export interface RotationConfig {
+  id: string;
+  plant_id: string;
+  team_order: string[];
+  pattern: string;
+  day_offset: number;
+}
+
+export interface ShiftOverride {
+  id: string;
+  plant_id: string;
+  row_key: string;
+  date: string;
+  shift_type: string;
+  start_hour: number | null;
+  end_hour: number | null;
+}
+
+/** GET /shift-patterns?plant_id= — the plant's configured shift windows. */
+export function useShiftPatterns(plantId: string | undefined) {
+  return useQuery({
+    queryKey: ["dashboard", plantId, "shift-patterns"],
+    queryFn: async () => {
+      const response = await api.get<ShiftPattern[] | { items: ShiftPattern[] }>(
+        `/shift-patterns?plant_id=${plantId}`,
+      );
+      return Array.isArray(response) ? response : (response.items ?? []);
+    },
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+/** GET /plants/{id}/rotation-config — 404s (error state) when unconfigured. */
+export function useRotationConfig(plantId: string | undefined) {
+  return useQuery({
+    queryKey: ["dashboard", plantId, "rotation-config"],
+    queryFn: () => api.get<RotationConfig>(`/plants/${plantId}/rotation-config`),
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+function useScheduleInvalidation(plantId: string | undefined) {
+  const qc = useQueryClient();
+  return () => {
+    if (!plantId) return;
+    qc.invalidateQueries({ queryKey: ["dashboard", plantId, "shifts-pattern"] });
+    qc.invalidateQueries({ queryKey: ["dashboard", plantId, "shift-patterns"] });
+    qc.invalidateQueries({ queryKey: ["dashboard", plantId, "rotation-config"] });
+    qc.invalidateQueries({ queryKey: ["dashboard", plantId, "shifts-now"] });
+    qc.invalidateQueries({ queryKey: ["current-shift", plantId] });
+  };
+}
+
+/** POST/PATCH/DELETE /shift-patterns — edits the plant's shift windows. */
+export function useShiftPatternMutations(plantId: string | undefined) {
+  const invalidate = useScheduleInvalidation(plantId);
+  const create = useMutation({
+    mutationFn: (data: {
+      shift_type: string;
+      start_hour: number;
+      end_hour: number;
+      days_of_week: number[];
+      line_id?: string | null;
+    }) => api.post<ShiftPattern>("/shift-patterns", { plant_id: plantId, ...data }),
+    onSuccess: invalidate,
+  });
+  const update = useMutation({
+    mutationFn: ({
+      id,
+      ...data
+    }: {
+      id: string;
+      shift_type?: string;
+      start_hour?: number;
+      end_hour?: number;
+      days_of_week?: number[];
+      active?: boolean;
+    }) => api.patch<ShiftPattern>(`/shift-patterns/${id}`, data),
+    onSuccess: invalidate,
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del(`/shift-patterns/${id}`),
+    onSuccess: invalidate,
+  });
+  return { create, update, remove };
+}
+
+/** PATCH /plants/{id}/rotation-config — change cycle (2-2-2-2/3-3-3-3) or phase. */
+export function useUpdateRotationConfig(plantId: string | undefined) {
+  const invalidate = useScheduleInvalidation(plantId);
+  return useMutation({
+    mutationFn: (data: { pattern?: "2-2-2-2" | "3-3-3-3"; day_offset?: number }) =>
+      api.patch<RotationConfig>(`/plants/${plantId}/rotation-config`, data),
+    onSuccess: invalidate,
+  });
+}
+
+/** Upsert (POST) + delete per-day cell overrides on the schedule grid. */
+export function useShiftOverrideMutations(plantId: string | undefined) {
+  const invalidate = useScheduleInvalidation(plantId);
+  const upsert = useMutation({
+    mutationFn: (data: {
+      row_key: string;
+      date: string;
+      shift_type: string;
+      start_hour?: number | null;
+      end_hour?: number | null;
+    }) => api.post<ShiftOverride>("/shifts/overrides", { plant_id: plantId, ...data }),
+    onSuccess: invalidate,
+  });
+  const remove = useMutation({
+    mutationFn: (overrideId: string) => api.del<void>(`/shifts/overrides/${overrideId}`),
+    onSuccess: invalidate,
+  });
+  return { upsert, remove };
+}
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  active: boolean;
+}
+
+export interface TeamDetail {
+  id: string;
+  name: string;
+  plant_id?: string;
+  tenant_id?: string;
+  supervisor_id?: string | null;
+  supervisor_name?: string | null;
+  member_ids?: string[];
+  /** Resolved member objects — present once the backend ships enrichment. */
+  members?: TeamMember[];
+  shift_config?: Record<string, unknown>;
+  active?: boolean;
+  /** Lines this team is placed on. Absent/empty = unplaced (tray). Needs the
+   * backend LAYOUT_SPEC to persist; optional so an old backend degrades cleanly. */
+  assigned_line_ids?: string[];
+  /** Board ordering within a line column. */
+  sort_order?: number;
+}
+
+/** Full team documents (member_ids/members) as opposed to useTeams' summaries. */
+export function usePlantTeamsDetail(plantId: string | undefined) {
+  return useQuery({
+    queryKey: ["dashboard", plantId, "teams-detail"],
+    queryFn: async () => {
+      const response = await api.get<any>(`/teams?plant_id=${plantId}`);
+      return (response.items ?? response) as TeamDetail[];
+    },
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
+}
+
+export interface DirectoryUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  active: boolean;
+}
+
+/** Tenant user directory for team-member pickers. GET /users requires
+ * supervisor+ on desktop — only enable for callers that can fetch it. */
+export function useUserDirectory(tenantId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["users", "directory", tenantId],
+    queryFn: async () => {
+      const response = await api.get<any>("/users?page_size=200");
+      return (response.items ?? []) as DirectoryUser[];
+    },
+    enabled: !!tenantId && enabled,
+    staleTime: STALE_TIME,
+  });
+}
+
+/** Full-replace team membership (POST /teams/{id}/members). Enforces
+ * one-team-per-user server-side by pulling members from sibling teams. */
+export function useSetTeamMembers() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ teamId, memberIds }: { teamId: string; memberIds: string[] }) =>
+      api.post<TeamDetail>(`/teams/${teamId}/members`, { member_ids: memberIds }),
+    onMutate: async ({ teamId, memberIds }) => {
+      await qc.cancelQueries({ queryKey: ["dashboard"] });
+      const snapshots = qc
+        .getQueriesData({ queryKey: ["dashboard"] })
+        .filter(([key]) => Array.isArray(key) && key[2] === "teams-detail");
+      snapshots.forEach(([key]) => {
+        qc.setQueryData(key, (old: TeamDetail[] | undefined) =>
+          Array.isArray(old)
+            ? old.map((t) => {
+                if (t.id === teamId) return { ...t, member_ids: memberIds };
+                const ids = t.member_ids ?? [];
+                return ids.some((id) => memberIds.includes(id))
+                  ? { ...t, member_ids: ids.filter((id) => !memberIds.includes(id)) }
+                  : t;
+              })
+            : old,
+        );
+      });
+      return { snapshots };
+    },
+    onError: (_err, _vars, ctx) => {
+      ctx?.snapshots.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["users", "directory"] });
+      qc.invalidateQueries({ queryKey: ["system", "users"] });
+      qc.invalidateQueries({ queryKey: ["admin", "tenants"] });
+    },
+  });
+}
+
+/** Board placement/ordering (PATCH /teams/{id}). `assigned_line_ids: []`
+ * unplaces a team; omitted keys stay unchanged (backend uses exclude_unset).
+ * Optimistically patches teams-detail queries, rolling back on error. */
+export function useUpdateTeam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      teamId,
+      patch,
+    }: {
+      teamId: string;
+      patch: { assigned_line_ids?: string[]; sort_order?: number; name?: string };
+    }) => api.patch<TeamDetail>(`/teams/${teamId}`, patch),
+    onMutate: async ({ teamId, patch }) => {
+      await qc.cancelQueries({ queryKey: ["dashboard"] });
+      const snapshots = qc
+        .getQueriesData({ queryKey: ["dashboard"] })
+        .filter(([key]) => Array.isArray(key) && key[2] === "teams-detail");
+      snapshots.forEach(([key]) => {
+        qc.setQueryData(key, (old: TeamDetail[] | undefined) =>
+          Array.isArray(old)
+            ? old.map((t) => (t.id === teamId ? { ...t, ...patch } : t))
+            : old,
+        );
+      });
+      return { snapshots };
+    },
+    onError: (_err, _vars, ctx) => {
+      ctx?.snapshots.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+/** Create a team on the Layout board (POST /teams, supervisor+ desktop). */
+export function useCreateTeam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ plantId, name }: { plantId: string; name: string }) =>
+      api.post<TeamDetail>("/teams", { plant_id: plantId, name }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
   });
 }
 

@@ -21,9 +21,10 @@ export function TrialStatusBadge({
   status: TenantStatus;
   trialEndsAt?: string | null;
 }) {
+  const now = typeof window !== "undefined" ? Date.now() : new Date("2024-01-01").getTime();
   const daysLeft =
     trialEndsAt && status === "trial"
-      ? Math.max(0, Math.ceil((new Date(trialEndsAt).getTime() - Date.now()) / 86400000))
+      ? Math.max(0, Math.ceil((new Date(trialEndsAt).getTime() - now) / 86400000))
       : null;
 
   return (

@@ -7,12 +7,14 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { restoreSession, useShiftLog } from "../lib/shift-log";
+import { restoreSession, getRestoreSessionPromise, useShiftLog } from "../lib/shift-log";
+import { ClientOnly } from "@/components/ui/ClientOnly";
+import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
@@ -125,12 +127,15 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const state = useShiftLog();
+  const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
-    restoreSession();
+    getRestoreSessionPromise().then(() => {
+      setSessionReady(true);
+    });
   }, []);
 
-  if (state.loading && !state.user) {
+  if (!sessionReady) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="size-8 animate-spin text-primary" />
@@ -142,6 +147,15 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
+      <Toaster position="top-right" richColors />
     </QueryClientProvider>
+  );
+}
+
+function RootComponentWrapper() {
+  return (
+    <ClientOnly>
+      <RootComponent />
+    </ClientOnly>
   );
 }

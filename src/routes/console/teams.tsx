@@ -1,9 +1,20 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
+import { Loader2, UserPlus } from "lucide-react";
 import { ConsoleShell, StatCard } from "@/components/console/ConsoleShell";
-import { useShiftLog } from "@/lib/shift-log";
-import { useAssetRollup, useShifts, useTeams, useTeamsSummary } from "@/lib/hooks";
+import { TeamMembersDialog } from "@/components/console/TeamMembersDialog";
+import { EmptyPlantState } from "@/components/console/EmptyPlantState";
+import { useShiftLog, hasMinRole } from "@/lib/shift-log";
+import {
+  useAssetRollup,
+  useShifts,
+  useTeams,
+  useTeamsSummary,
+  useShiftsNow,
+  usePlantTeamsDetail,
+  type TeamDetail,
+} from "@/lib/hooks";
+import { shiftLabel, formatWindow } from "@/lib/shift-now";
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -42,11 +53,15 @@ function TeamsPage() {
   const plantId = user?.plant_ids?.[0];
 
   const [date, setDate] = useState(todayStr());
+  const [membersTeam, setMembersTeam] = useState<TeamDetail | null>(null);
 
   const teams = useTeams(plantId);
   const teamsSummary = useTeamsSummary(plantId, date);
   const shifts = useShifts(plantId, date);
   const assetRollup = useAssetRollup(plantId, 30);
+  const shiftsNow = useShiftsNow(plantId);
+  const teamsDetail = usePlantTeamsDetail(plantId);
+  const canManage = !!user && hasMinRole(user.role, "supervisor");
 
   const loading = teams.isLoading || teamsSummary.isLoading || shifts.isLoading || assetRollup.isLoading;
   const error = teams.error || teamsSummary.error || shifts.error || assetRollup.error;
@@ -79,7 +94,35 @@ function TeamsPage() {
     );
   }
 
+  if ((teams.data ?? []).length === 0) {
+    return (
+      <ConsoleShell title="Teams" subtitle="Performance by team, broken down per shift">
+        <EmptyPlantState
+          title="No teams yet"
+          description="Teams are created as an empty carcass during onboarding (areas, lines, and shift pattern). Configure the plant setup to see team performance here."
+        />
+      </ConsoleShell>
+    );
+  }
+
   const summaryMap = new Map(teamsSummary.data?.map((t) => [t.team_id, t]) ?? []);
+  const detailMap = new Map((teamsDetail.data ?? []).map((t) => [t.id, t]));
+  const currentShift = shiftsNow.data?.current_shift ?? null;
+  const currentTeamId = currentShift?.team?.id ?? null;
+
+  const badgeFor = (teamId: string): { label: string; tone: "on" | "off" } | null => {
+    if (!currentShift) return null;
+    if (currentTeamId === teamId) {
+      return {
+        label: `On shift · ${shiftLabel(currentShift.shift_type)} ${formatWindow(
+          currentShift.start,
+          currentShift.end,
+        )}`,
+        tone: "on",
+      };
+    }
+    return { label: "Off now", tone: "off" };
+  };
 
   return (
     <ConsoleShell title="Teams" subtitle="Performance by team, broken down per shift">
@@ -108,6 +151,14 @@ function TeamsPage() {
         {teams.data?.map((team) => {
           const t = summaryMap.get(team.id);
           const teamShifts = shifts.data?.filter((s) => s.team_id === team.id) ?? [];
+          const badge = badgeFor(team.id);
+          const detail = detailMap.get(team.id);
+          const memberIds = detail?.member_ids ?? detail?.members?.map((m) => m.id) ?? [];
+          const members = detail?.members;
+          const badgeClass =
+            badge?.tone === "on"
+              ? "border-success/40 bg-success/10 text-success"
+              : "border-border bg-secondary text-muted-foreground";
           return (
             <section key={team.id} className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-baseline justify-between">
@@ -121,6 +172,53 @@ function TeamsPage() {
                   {t?.achievement ?? 0}%
                 </span>
               </div>
+
+              {badge ? (
+                <span
+                  className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${badgeClass}`}
+                >
+                  {badge.label}
+                </span>
+              ) : null}
+
+              {/* Members preview → opens the shared dialog */}
+              <div className="mt-3 rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Members{memberIds.length > 0 ? ` (${memberIds.length})` : ""}
+                  </p>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                    onClick={() => setMembersTeam(detail ?? { id: team.id, name: team.name })}
+                  >
+                    {canManage ? <UserPlus className="size-3.5" /> : null}
+                    {canManage ? "Manage members" : "View members"}
+                  </button>
+                </div>
+                <ul className="mt-2 space-y-1">
+                  {members?.slice(0, 4).map((m) => (
+                    <li key={m.id} className="truncate text-sm">
+                      {m.name}{" "}
+                      <span className="text-xs text-muted-foreground">· {m.email}</span>
+                    </li>
+                  ))}
+                  {members && members.length > 4 ? (
+                    <li className="text-xs text-muted-foreground">
+                      +{members.length - 4} more
+                    </li>
+                  ) : null}
+                  {!members && memberIds.length > 0 ? (
+                    <li className="text-sm text-muted-foreground">
+                      {memberIds.length} member{memberIds.length === 1 ? "" : "s"}
+                    </li>
+                  ) : null}
+                  {memberIds.length === 0 ? (
+                    <li className="text-sm text-muted-foreground">No members yet.</li>
+                  ) : null}
+                </ul>
+              </div>
+
               <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-lg border border-border py-2">
                   <p className="text-xs text-muted-foreground">Events</p>
@@ -167,6 +265,14 @@ function TeamsPage() {
           <p className="text-sm text-muted-foreground">No asset data available.</p>
         ) : null}
       </div>
+
+      <TeamMembersDialog
+        team={membersTeam}
+        open={!!membersTeam}
+        onOpenChange={(o) => {
+          if (!o) setMembersTeam(null);
+        }}
+      />
     </ConsoleShell>
   );
 }

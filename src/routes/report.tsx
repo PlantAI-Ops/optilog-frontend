@@ -1,8 +1,10 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { BadgeCheck, FileText, Share2 } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import {
   approveReport,
+  canLogShift,
   formatTime,
   hasMinRole,
   unresolvedCount,
@@ -29,7 +31,15 @@ export const Route = createFileRoute("/report")({
 
 function ReportPage() {
   const state = useShiftLog();
+  const navigate = useNavigate();
   const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
+
+  // Part of the voice logging flow — shift_manager+ belongs on the manager home.
+  const canLog = canLogShift(state.user?.role);
+  useEffect(() => {
+    if (state.user && !canLog) navigate({ to: "/", replace: true });
+  }, [state.user, canLog, navigate]);
+  if (state.user && !canLog) return null;
 
   return (
     <AppShell title="Shift report">

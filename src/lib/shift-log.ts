@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { api, clearToken, getToken, setRefreshToken, setToken } from "./api";
 import type { MyEvent } from "./hooks";
+import { useId } from "react";
 
 /* -------------------------------------------------------------------------- */
 /*                                   types                                    */
@@ -100,6 +101,22 @@ export interface User {
   plant_ids: string[];
 }
 
+export interface SystemUser {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  tenant_id: string | null;
+  tenant_name: string | null;
+  plant_ids: string[];
+  /** plant_id -> plant_name, resolved server-side (missing ids = deleted plants) */
+  plant_names?: Record<string, string>;
+  /** team name the user belongs to, resolved server-side (null/absent = no team) */
+  team_name?: string | null;
+  active: boolean;
+  created_at: string;
+}
+
 export interface ShiftState {
   user: User | null;
   shiftActive: boolean;
@@ -108,6 +125,9 @@ export interface ShiftState {
   shiftType: string | null;
   lineId: string | null;
   line: string;
+  /** Team the confirmed shift belongs to (set when logging starts). */
+  teamId?: string | null;
+  teamName?: string | null;
   startedAt: string | null;
   endedAt: string | null;
   handover: string;
@@ -137,6 +157,19 @@ export function hasMinRole(userRole: Role, required: Role): boolean {
   return ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[required];
 }
 
+/** Voice logging (start shift → record → timeline → end shift → report) is a
+ * floor tool: operator, technician and supervisor only. shift_manager and
+ * above get the manager home on `/` instead. */
+export function canLogShift(role: Role | undefined): boolean {
+  return !!role && !hasMinRole(role, "shift_manager");
+}
+
+/** Plant managers and above never belong to a crew — they are excluded from
+ * team member pickers (one-team-per-user does not apply to them). */
+export function canBeTeamMember(role: Role | string | undefined): boolean {
+  return !!role && !hasMinRole(role as Role, "plant_manager");
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                  store                                     */
 /* -------------------------------------------------------------------------- */
@@ -158,7 +191,7 @@ const initialState: ShiftState = {
   events: [],
   carriedOver: [],
   online: true,
-  loading: false,
+  loading: true,
   error: null,
 };
 
@@ -180,6 +213,19 @@ function persist() {
   }
 }
 
+function hydrate() {
+  if (hydrated || typeof window === "undefined") return;
+  hydrated = true;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw) state = { ...initialState, ...(JSON.parse(raw) as ShiftState) };
+    // A page reload always ends any in-flight request — never resume in loading state.
+    state = { ...state, loading: false };
+  } catch {
+    /* ignore corrupt payload */
+  }
+}
+
 export function setState(patch: Partial<ShiftState> | ((s: ShiftState) => Partial<ShiftState>)) {
   const next = typeof patch === "function" ? patch(state) : patch;
   state = { ...state, ...next };
@@ -188,20 +234,13 @@ export function setState(patch: Partial<ShiftState> | ((s: ShiftState) => Partia
 }
 
 function subscribe(listener: () => void) {
-  if (!hydrated && typeof window !== "undefined") {
-    hydrated = true;
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) state = { ...initialState, ...(JSON.parse(raw) as ShiftState) };
-    } catch {
-      /* ignore corrupt payload */
-    }
-  }
+  hydrate();
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
 export function useShiftLog(): ShiftState {
+  hydrate();
   return useSyncExternalStore(
     subscribe,
     () => state,
@@ -252,7 +291,10 @@ export async function login(email: string, password: string): Promise<void> {
 
 export async function restoreSession(): Promise<void> {
   const token = getToken();
-  if (!token) return;
+  if (!token) {
+    setState({ loading: false });
+    return;
+  }
   setState({ loading: true });
   try {
     const user = await api.get<User>("/auth/me");
@@ -265,6 +307,15 @@ export async function restoreSession(): Promise<void> {
       throw e;
     }
   }
+}
+
+let restoreSessionPromise: Promise<void> | null = null;
+
+export function getRestoreSessionPromise(): Promise<void> {
+  if (!restoreSessionPromise) {
+    restoreSessionPromise = restoreSession();
+  }
+  return restoreSessionPromise;
 }
 
 export function logout() {
@@ -281,6 +332,22 @@ export function logout() {
     reportApproved: false,
     error: null,
   });
+}
+
+/**
+ * Sign out and hard-navigate to the login screen (`/` hosts `LoginScreen`)
+ * WITHOUT touching the in-memory store: `setState` would flush a re-render of
+ * the current (console) page with `user: null` before the browser unloads it,
+ * visibly emptying the dashboard first. Token + persisted state are cleared
+ * directly instead, and `location.replace` keeps the console out of history.
+ * The full reload also discards the React Query cache.
+ */
+export function logoutHard(): void {
+  clearToken();
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(STORAGE_KEY);
+  }
+  window.location.replace("/");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -458,6 +525,8 @@ export function formatTime(iso: string) {
   });
 }
 
+let eventCounter = 0;
+
 export const STATUS_LABEL: Record<EventStatus, string> = {
   draft: "Draft",
   confirmed: "Confirmed",
@@ -467,6 +536,28 @@ export const STATUS_LABEL: Record<EventStatus, string> = {
 };
 
 export function blankEvent(loggedBy: string): ShiftEvent {
+  if (typeof window === "undefined") {
+    return {
+      id: `evt_ssr_${++eventCounter}`,
+      event_type: "",
+      asset: "Packaging Line 2",
+      subsystem: "",
+      timestamp: new Date().toISOString(),
+      duration_minutes: null,
+      observation: "",
+      reported_cause: "",
+      suspected_cause: "",
+      verified_cause: "",
+      action_taken: "",
+      severity: "",
+      status: "draft",
+      source: "manual",
+      confidence: 1,
+      transcript: "",
+      sync: "pending",
+      logged_by: loggedBy,
+    };
+  }
   return {
     id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     event_type: "",

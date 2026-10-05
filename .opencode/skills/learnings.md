@@ -633,3 +633,454 @@ const updateRing = () => {
 - The file had pre-existing prettier drift; `npx eslint <file>` fails the build on it. Run `npx prettier --write <file>` on any file you touch here, then re-lint.
 - Repo temp-dir gotcha: `C:\Users\MY PC~1\...` (with a space) does not resolve; `$env:TEMP` gives `C:\Users\MYPC~1\AppData\Local\Temp`, and `Remove-Item -LiteralPath` on that short path fails — use `[System.IO.File]::Delete()`.
 - The whole wizard resume/seed-config feature was already uncommitted before this session, so `git diff` on `OnboardingWizard.tsx` shows far more than the hardening changes. Do not commit unless asked.
+
+---
+
+## 2026-10-01: Mass import clobbering from ClientOnly hydration fixes
+
+**Context:** A previous edit wave added `ClientOnly` wrappers and `useFormattedNumber`/`useFormattedTime` hooks to fix SSR/hydration mismatches across console pages. During those edits, entire import blocks were accidentally deleted/replaced in multiple files, leaving undefined identifiers that threw `ReferenceError` at render → root ErrorComponent → "This page didn't load".
+
+**Root cause:** The edits kept the new `ClientOnly` imports but dropped 11-15 existing import lines per file. Vite build (`vite build`) does NOT run `tsc`, so these `TS2304: Cannot find name` errors never surfaced in CI/build — only at runtime in the browser.
+
+**Files affected (TS2304 errors):**
+- `src/routes/console/shifts.tsx` — lost 11 imports (`useState`, `Loader2`, `ConsoleShell`, `StatCard`, `SourceBadge`, `SOURCE_LABEL`, `STATUS_LABEL`, `ApiError`, `useShiftLog`, `useShiftEvents`, `useShifts`)
+- `src/routes/console/calendar.tsx` — lost `format`, `startOfMonth` from `date-fns`
+- `src/routes/console/maintenance.tsx` — lost `CalendarDays`, `CheckCircle2`, `ChevronLeft` from `lucide-react`
+- `src/routes/console/index.tsx` — lost `formatNumber` from `@/lib/locale`
+- `src/routes/console/integrations.tsx` — lost `useState` from `react`, `formatNumber` from `@/lib/locale`
+- `src/routes/console/admin/$tenantId/index.tsx` — lost `Label`, `Input` from `@/components/ui`, `format` from `date-fns`
+- `src/routes/console/admin/system/index.tsx` — lost `Badge` from `@/components/ui` + conditional hooks (early return before hooks)
+- `src/routes/console/admin/system/tenant/$tenantId/index.tsx` — lost `format` from `date-fns`
+- `src/components/admin/PlantSetupForm.tsx` — lost `Button` from `@/components/ui`
+
+**Additional bugs found/fixed:**
+1. **Conditional hooks (rules-of-hooks violation):** `src/routes/console/admin/system/index.tsx` had early return (`if (!user) return null`) BEFORE calling `useTenants()`, `useSystemStats()`, 6× `useState`, `useSystemUsers()` — moved after all hooks.
+2. **Hook in JSX:** `src/routes/index.tsx:593` called `useFormattedTime()` inside JSX after early returns — replaced with non-hook `formatTime()` from `@/lib/locale`.
+3. **StatCard type:** `value: string | number` too narrow for `ClientOnly` children — widened to `React.ReactNode`.
+4. **Badge variants:** Added missing `success` and `warning` variants to `src/components/ui/badge.tsx`.
+5. **Template literal JSX:** `shifts.tsx` `hint={`Target <ClientOnly>...</ClientOnly>`}` rendered as literal text — fixed to proper JSX element.
+6. **PlantSetupForm `.data` misuse:** `useTenantPlants` returns `AdminPlant[]` directly (via `normalizeArrayResponse`), not an object with `.data` — fixed all accesses.
+7. **SystemUsersResponse `.length`:** Response is `{ items, total, page, ... }`, not an array — use `.items?.length`.
+8. **Pre-existing SpeechRecognition types:** Added ambient declarations inline in `src/routes/index.tsx` (4 errors).
+
+**Guardrail added:** `npm run typecheck` script (`tsc --noEmit`) — run in CI or pre-commit to catch missing imports and type errors that `vite build` misses.
+
+**Lesson:** When adding imports during a refactor, always verify the file still has ALL required imports. A grep for `Cannot find name` after `tsc --noEmit` would have caught this instantly. The `vite build` success is NOT a signal of type safety in this project.
+
+---
+
+## 2026-10-01: Login spinner stuck, pending-shift button blocked, backend aggregate 500s
+
+**1. Sign-in button spun forever** (`src/lib/shift-log.ts`):
+- `initialState.loading = true` and `restoreSession()` early-returned when no token existed **without clearing `loading`**. First visit = spinner + disabled button permanently.
+- Fix: set `loading: false` before the early return, and force `loading: false` in `hydrate()` so a persisted `loading: true` (reload mid-request) can never resume.
+
+**2. "Start Logging" dead for unscheduled operators** (`src/routes/index.tsx`):
+- Verified against local backend: `/plants/{id}/shifts/current` returns a **pending** shift with `lines: []` when nobody is scheduled. The Production area `<select>` never rendered, so `selectedLineId` stayed `""` and `canStart = !!shift && !!selectedLineId` stayed false.
+- Fix: `canStart = !!shift && (lines.length === 0 || !!selectedLineId)`; `handleStart` falls back to `shift.line_name || "Unassigned"`. Button label shows `Loading…` while the shift query is in flight.
+
+**3. Backend 500s on shifts/rollup (+ misleading CORS errors):** fixed in `optilog-backend`:
+- The backend uses pymongo's **native async API** (`AsyncMongoClient`), where `AsyncCollection.aggregate()` is a *coroutine* returning `AsyncCommandCursor`. All 9 call sites used the old Motor style (`cursor = coll.aggregate(p)` / `await cursor.to_list(n)`) → `AttributeError: 'coroutine' object has no attribute 'to_list'`.
+- Unhandled 500s also bypass `CORSMiddleware` (Starlette's `ServerErrorMiddleware` is outermost), so the browser logged `No 'Access-Control-Allow-Origin' header` — a symptom, not the cause.
+- Why tests missed it: `tests/conftest.py` uses `mongomock_motor`, whose `aggregate()` returns a cursor **synchronously**; awaiting it then fails. Fix is the compatibility helper `aggregate_list()` in `app/db/collections.py` (await only if `inspect.isawaitable`), used by all 9 sites in `dashboard/`, `shifts/`, `admin/` services.
+- Repro recipe that found it: call the service function directly from a stdin-piped python script with `traceback.print_exc()` — the empty-body 500 gave no clue.
+- Pre-existing unrelated failure: `tests/api/test_security.py::test_system_admin_can_grant_system_admin` (403 `Cannot grant this role` from WIP `can_grant_role` logic) — not caused by this work.
+
+
+---
+
+## 2026-10-02: Tenant admin panel opened to plant_manager/integration_admin
+
+**Goal:** \/console/admin\ usable by plant_manager + integration_admin (own tenant only), with system-admin parity (members CRUD, role breakdown).
+
+**Backend (\optilog-backend\):**
+- \GET /admin/tenants/{id}\, \/tenants/{id}/users\, \/tenants/{id}/stats\ (new), \GET/POST /admin/users\, \GET/PATCH/DELETE /admin/users/{id}\: \equire_role("system_admin")\ → \equire_role("plant_manager")\ (rank ≥4 via \ROLE_HIERARCHY\).
+- Service layer does the real scoping: \_check_tenant_access(user, tenant_id)\ (system_admin bypass), \list_all_users(..., caller)\ **pins non-system callers to their own tenant regardless of query params**, user CRUD checks the target user's \	enant_id\, \can_grant_role()\ (rank ≤, never system_admin) gates role changes. \update_user_admin\ pops \	enant_id\ for non-system callers (same-tenant no-op, cross-tenant 403).
+- New \GET /admin/tenants/{id}/stats\ → \TenantStatsResponse\ (total/active users, plants, pending invites, \users_by_role\ via \ggregate_list\).
+- Tests: 6 new cases in \	ests/api/test_cross_tenant_access.py\ + updated \	est_plant_manager_cannot_access_users\ → \..._can_access_users_scoped\. conftest tenant seeds needed \contact_email/trial_ends_at/max_users/max_plants/config\ or \TenantResponse\ validation 500s. Suite: 134 passed, 1 pre-existing failure (\	est_system_admin_can_grant_system_admin\).
+
+**Frontend:**
+- \dmin-hooks.ts\: \useTenants(enabled)\ (skip the system-admin-only list for scoped callers), \useTenantStats(tenantId)\. Existing \qc.invalidateQueries(["admin","tenants"])\ prefix already invalidates tenant users/stats — no mutation changes needed.
+- \CreateUserModal\: new \	enantId\ prop locks the tenant (renders name, skips \useTenants()\), role options filtered by \hasMinRole(caller.role, option)\, **"send invitation" now branches to \POST /admin/tenants/{id}/invite\** — the old path sent \password: ""\ to \POST /admin/users\ which 422'd (\UserCreate.password\ min_length=8, backend never handled \send_invitation\).
+- \UserEditModal\: tenant select + \useTenants()\ only for system_admin; role select rank-filtered and disabled when the target's role outranks the caller; payload only sends \ole\ when changed and \	enant_id\ only for system_admin (avoids 403 on untouched fields).
+- \outes/console/admin/\/index.tsx\ rebuilt as 4 tabs (Overview stats + role breakdown / Members / Plants / Invitations) with a scope guard redirecting non-system users to \user.tenant_id\. \dmin/route.tsx\ gate (\≥ plant_manager\) unchanged.
+
+**Gotchas:** \POST /admin/users\ still *requires* \	enant_id\ in the body (\UserCreate\ schema) — the service-level \or caller[tenant_id]\ fallback never fires from HTTP. Live smoke tests done with \	enant-admin@optilog.com\ (plant_manager, tenant \6abc31fd168d38a7d2ce0e37\).
+
+
+---
+
+## 2026-10-02: Plant IDs rendered as names in user tables
+
+**Bug:** system_admin Admin -> Users showed raw ObjectIDs (`6abd9cd7...`) in the Plants column (src/components/admin/SystemUserTable.tsx:225); the edit modal's Plant Access chips had the same issue.
+
+**Root cause:** `SystemUserTable` had no plant data at all (cross-tenant view - no `plants` prop), so it truncated ids. `TenantUserTable` never had this bug: it resolves via its `plants` prop (`plants.find(p => p.id === plantId)`).
+
+**Fix (server-side resolution, mirrors the existing tenant_name pattern):**
+- Backend `list_all_users` + `get_user_by_id_admin`: one extra `plants.find` by `_id $in ids` per page via helper `_plant_names_for_users()` -> attaches `user["plant_names"] = {plant_id: name}`. Dangling ids (deleted plants) are simply absent from the map.
+- `UserResponse` schema gained `plant_names: Optional[dict[str, str]] = None` - required, or FastAPI's response_model silently strips the field.
+- Frontend: `plant_names?: Record<string, string>` added to **both** `SystemUser` interfaces (shift-log.ts AND admin-hooks.ts - they are separate, duplicated types); render `user.plant_names?.[id] ?? id.slice(0,8)+"..."`.
+- Also removed the raw `tenant_id.slice(0,8)` subtitle under the tenant name in SystemUserTable (user chose "name only").
+
+**Pattern:** when a list view shows a foreign-key id, resolve the display name server-side in the list query rather than firing per-tenant fetches client-side (system admin views span all tenants -> client-side N+1).
+
+---
+
+## 2026-10-02: Server-driven Members tab, plant pickers, active=all
+
+**Gaps closed (7-item audit):** tenant Members tab had client-side-only filters (inactive users invisible, >50 truncated, no pagination/search), edit-modal email was a silent no-op, plant assignment was display-only, `useSystemUsers` sent dead `limit` param, "All Status" was active-only, docs lacked `plant_names`/`active`.
+
+**Frontend:**
+- `admin-hooks.ts`: new `UserListParams`/`UserListFilters` types + `buildUserListQuery()` (skips undefined — old code did `new URLSearchParams(params as any)` which emitted literal `"undefined"` strings). `useSystemUsers`/`useTenantUsers(tenantId, params?)` share it; param name is **`page_size`**, not `limit` (backend ignored `limit` entirely — effective page silently 50).
+- `TenantUserTable` converted to controlled/server-driven like `SystemUserTable`: `total/page/limit/onPageChange/onFiltersChange` props, debounced search, Active/Inactive/**All** status. Both consumers (`/console/admin/$tenantId` + `/console/admin/system/tenant/$tenantId`) hold `userPage`/`userFilters` state, reset both on `tenantId` change (same-route param changes don't remount). Members counts now use `data.total`, not `data.users.length` (page size).
+- `active` is tri-state end-to-end: filter default `{ active: "all" }` so the select label matches the request; backend maps `absent -> true (default)`, `"all" -> no filter`, else bool, invalid -> 422 (`_parse_active` in `admin.py`, `list_all_users(active: bool | str)`).
+- Modal plant pickers: `useTenantPlants(tenantId)` toggleable chips (primary-tinted when selected) in `CreateUserModal` + `UserEditModal`; tenant change resets `plantIds` (plant_ids are tenant-scoped, backend 403s foreign ids); dangling ids render as destructive chips with X. Edit-modal email is read-only with hint (user chose hiding over adding `email` to `UserUpdate`).
+- Search debounce: fixed pre-existing bug where the `setTimeout` cleanup was returned from the event handler (never runs) — now `useRef` + `useEffect` cleanup.
+
+**Gotchas:** `exactOptionalPropertyTypes: true` — can't pass `action={cond ? obj : undefined}` to optional props; spread instead (`...(cond ? { action: obj } : {})`). Editing a `useState` block near a hook call risks duplicating the state block — `tsc` catches it as TS2451 redeclare.
+
+**Verified:** backend 152 passed (+`test_active_filter_tri_state`), `tsc` + `vite build` clean, live smoke: default 14 vs `active=all` 15 users, `active=banana` 422, `page_size=1` honored, tenant path 13/14 with 1 inactive, `plant_names` on every item. Docs updated: `notes/FRONTEND_NOTES.md` (tri-state note, `AdminUser` type, error table incl. `Cannot delete your own account`/`plant_ids` 403/invite role 403, changelog row) + `API.md` (list params + `plant_names`).
+
+---
+
+## 2026-10-02: Current-shift visibility + team membership UI (frontend)
+
+**Feature:** (a) plant-wide "what shift is running now" visual, (b) per-team shift state, (c) team↔member assignment UI. Backend (new `GET /plants/{id}/shifts/now`, resolved `members` on team GETs, single-team `$pull`, `team_name` on users) is specified but **owned by the user's backend session — frontend was built against the contract and degrades until it ships**.
+
+**Frontend:**
+- `src/lib/hooks.ts`: `NowShift`/`TeamNow`/`ShiftsNowResponse` types + `useShiftsNow` (60s `refetchInterval`, **`retry: false`** so a missing endpoint hides the UI instead of hammering 404s), `TeamDetail`/`TeamMember` + `usePlantTeamsDetail` → `GET /teams?plant_id=` (full docs vs `useTeams`' `/plants/{id}/teams` summaries), `useUserDirectory(tenantId, enabled)` → `GET /users?page_size=200` (supervisor+ desktop only — enable flag avoids 403 noise), `useSetTeamMembers` full-replace mutation invalidating `["dashboard"]` + user-list prefixes (admin `team_name` refreshes).
+- `src/lib/shift-now.ts`: shared formatters (`formatClock`, `formatWindow`, `shiftLabel`), `teamNowBadge()` (on/next/off tones), `earliestNextShift()` — consumed by pill, banner, team cards.
+- `ConsoleShell` header pill: renders **only when data exists** (loading/error → nothing); green dot + `Night · 22:00–06:00 · 2 on`, or muted "No shift running".
+- `CurrentShiftBanner` component on `/console` above stat cards: fetches itself, returns null on load/error (dashboard never blocks on it — it's deliberately NOT part of the page's loading/error aggregation). On-shift teams = success-tinted badges (with line name), off = muted; counts + earliest next shift.
+- Teams page: per-card `teamNowBadge`; Members panel from `usePlantTeamsDetail` — resolved `members` list with remove, `Add member` search/combobox from directory (filtered to active non-members), fallback "N members" when backend hasn't shipped `members` enrichment, full-replace save via `saveMembers`, inline error state, `hasMinRole(user.role, "supervisor")` gates all controls (mirrors backend `require_desktop("supervisor")`).
+- Admin read-only: `team_name?: string | null` added to **both** `SystemUser` interfaces; Team column in both tables (`colSpan` bumped 5→6 / 6→7); `UserEditModal` read-only Team row pointing to the Teams page.
+
+**Gotchas:** mobile `GET /plants/{id}/shifts/current` is caller-team-scoped AND mutates the DB (inserts pending/scheduled shifts) — the new `/shifts/now` contract explicitly forbids both; `GET /users` (directory for the picker) is `require_desktop("supervisor")`, so the query must be enable-gated by role or operators get 403 spam; `User` in shift-log has `tenant_id` (needed as directory query key — avoids cross-tenant cache hits).
+
+**Status:** `tsc` + `vite build` clean. Live smoke of the new UI **blocked until backend ships the 3 changes** — pill/banner/members silently degrade until then.
+
+---
+
+## 2026-10-02: Schedule page (clickable shift pattern) + shared TeamMembersDialog
+
+**Feature:** (a) new `/console/schedule` — 7-day week grid, teams (rows) × days (cols), colored shift blocks, **every cell clickable** → shift detail dialog showing shift type/window/status **plus the team's member roster**, (b) member management extracted into a shared supervisor dialog used from Teams + Schedule.
+
+**Frontend:**
+- `src/lib/shift-now.ts`: added `SHIFT_COLORS` (moved out of `calendar.tsx` — single source now), `shiftCellStyle(type)` → `{dot, cell, text}` classes (morning=yellow, afternoon=orange, night=indigo, day=sky, off/unknown=muted).
+- `src/lib/hooks.ts`: `PatternDay`/`PatternTeam`/`ShiftsPatternResponse` + `useShiftsPattern(plantId, from, days)` → `GET /plants/{id}/shifts/pattern?from=&days=7`, `retry: false` (endpoint doesn't exist yet → page shows its empty state, not a spinner loop).
+- `src/routes/console/schedule.tsx` (new route): week nav (‹ › Today), legend, `grid-cols-[160px_repeat(7,minmax(0,1fr))]` inside `overflow-x-auto` (min-w 820px), today column ringed, cells disabled "—" when no data. Click → detail Dialog (radix, conditional children — never render an empty `DialogContent`) with roster from `usePlantTeamsDetail` + `Manage/View members` button → `TeamMembersDialog`. Degrade branch renders team chips that open the members dialog directly so the page is useful pre-backend.
+- `src/components/console/TeamMembersDialog.tsx` (new, shared): roster (any role, read-only) + add/remove edit mode gated by `hasMinRole(role,"supervisor")`; looks up the *freshest* team doc via `usePlantTeamsDetail` (mutation invalidates it), directory query enabled only while `open && canManage`; state reset in `useEffect` keyed on `open`/`team.id`.
+- Teams page: inline panel replaced by roster preview (first 4 + count fallback) + Manage/View button; all directory/mutation state moved into the dialog. Nav: `Schedule` entry (CalendarRange icon) after Calendar in `ConsoleShell.NAV`.
+
+**Gotchas:** `noUncheckedIndexedAccess` + `noPropertyAccessFromIndexSignature` — `SHIFT_COLORS.morning` (dot access on index signature) fails TS4111/TS2322; use string literals inside the record instead of referencing another index-signature record. `routeTree.gen.ts` regenerates during `vite build` — new file-based routes need no manual step. Smoke-test note: backend (`:8000`) hung mid-session (port listening, `/health`+`/docs` time out) — frontend checks (`tsc`, `vite build`, route 200s on `:8080`) still valid; confirmed `GET /plants/{id}/shifts/pattern` → 404 before the hang (degrade path correct).
+
+---
+
+## 2026-10-03: /shifts/now shape mismatch crashed every console page
+
+**Bug:** logging in as supervisor → clicking Console → "This page didn't load". `TypeError: Cannot read properties of undefined (reading 'filter')` at `ConsoleShell.tsx:60` (5 re-render crashes).
+
+**Root cause:** the backend session implemented `GET /plants/{id}/shifts/now` with its own shape — `{"current_shift": {shift_type, start_hour, end_hour, start, end, date, team:{id,name,supervisor|null,member_count}|null, source} | null}` (single rotation-resolved team) — while the frontend type still claimed `{now, plant_shift_type, plant_shift_window, teams[]}`. `now?.teams.filter(...)` short-circuits only when `now` itself is nullish; a truthy `{current_shift: null}` **still crashes** because `.teams` is undefined. Same latent crash in `CurrentShiftBanner` (`data.teams.filter`, `earliestNextShift(data.teams)`).
+
+**Fix (frontend adapted to the implemented backend — no backend changes):**
+- `hooks.ts`: `NowTeam`/`CurrentShift`/`ShiftsNowResponse {current_shift: CurrentShift | null}` replace `NowShift`/`TeamNow`; deleted `teamNowBadge` + `earliestNextShift` from `shift-now.ts` (backend exposes no next-shift data).
+- `ConsoleShell` pill: `shift = data?.current_shift ?? null` → green pill `Type · window · team name`; gray "No shift running" only when `!isLoading && !isError` (no flash/error lie); `.filter` line deleted.
+- `CurrentShiftBanner` rework: `useTeams` strip where **on-shift is derived** — `current_shift.team` first (green, with supervisor + member_count), all other teams muted "Off"; counts derived (`onCount = team ? 1 : 0`); "via rotation|pattern" source note.
+- `teams.tsx` card badges derived: `currentShift.team?.id === team.id` → `On shift · …`, else `Off now`, none when `current_shift` is null; dropped the "next" tone.
+
+**Verified live:** backend returns `{"current_shift": null}` for `sup-1@optilog.com` (TestPass123!, plant `6abd9cd7…`, but that plant currently has **no teams and no shift_patterns** — data state, not code); `tsc` + `vite build` green; `/console`, `/console/teams`, `/console/schedule`, `/console/calendar` → 200; `GET /users` directory works for supervisor desktop tokens (dialog picker will populate).
+
+**Lesson:** a TS response type is a *claim*, not a check — when a backend endpoint lands from another session, curl it and diff against the interface before trusting the type. Also: optional chaining `a?.b.filter()` protects `a`, never `a.b`; guard the property you actually call methods on (`a?.b?.filter()`), or normalize at the fetch boundary.
+
+
+---
+
+## 2026-10-03: Shift generator engine — Schedule template preview + config/cell edit flow
+
+**Feature:** (a) the onboarding rotating-preview visual (M/A/N/D/- letter grid) now renders **inside the Schedule page** as a "Schedule template" strip driven by live pattern data, phase-accurate per crew row — and still renders (default pattern) when a plant has **zero teams/patterns**; (b) post-onboarding editing: shift-window CRUD + rotation cycle/phase PATCH via a new "Edit schedule" dialog, plus per-day cell overrides; (c) onboarding wizard may now submit an **empty roster** (backend auto-creates crews from `globalShiftConfig`); (d) start-shift screen confirms shift/team/area (your-team badge + mismatch warning + area-grouped line picker).
+
+**Backend spec (NOT yet implemented — delivered as `optilog-backend/notes/SHIFT_GENERATOR_SPEC.md`, A1–A7):** team-less `PlantSetup` (+`globalShiftConfig`, tenant check, idempotent re-setup), synthetic `kind:"track"` crew rows in `GET /shifts/pattern` with `override_id` per cell, `shift_overrides` collection + `/shifts/overrides` CRUD (override wins over computed cell AND materialized doc), `GET/PATCH /plants/{id}/rotation-config` (409 when switching from `extended`), worker `effective_day_offset` fix, tests for all of it.
+
+**Frontend:**
+- `src/components/ShiftCycleStrip.tsx` (new, shared): `CyclePreview` (static mode — config-driven; rotating/extended/regular; pixel-identical to the old onboarding `RotatingPreview`, which was deleted from `PlantSetupForm`) + `ShiftCycleStrip` (data mode — `rows × colDates` letter grid with legend derived from cell `start`/`end`) + `formatHour`/`shiftTypeLetter` exports. `PlantSetupForm` now imports these; previews were also ADDED to the extended and regular-day panels (previously rotating-only).
+- `schedule.tsx`: strip card above the grid (`mb-4`), rows mapped from `pattern.data.teams`; **zero-row success** and **error** states both fall back to a static default `CyclePreview` so the visual is always present; `kind:"track"` rows show a "Crew template" sub-label and their detail dialog swaps the member roster for an assign-operators note; cells with `override_id` show a `*`; selection is re-resolved against fresh pattern data (`sel` lookup) so overrides update live after invalidation.
+- `ScheduleConfigDialog.tsx` (new): pattern list with immediate-apply edits (type select, hour inputs, M–S day toggles guarded against emptying the set, active toggle, two-click delete), add-pattern form surfacing 409 overlap messages, rotation section (2-2-2-2/3-3-3-3 buttons + phase stepper; hidden when rotation 404; read-only note for `extended`).
+- `hooks.ts`: `ShiftPattern`/`RotationConfig`/`ShiftOverride` types + `useShiftPatterns` (handles bare-array OR `{items}` response), `useRotationConfig`, `useShiftPatternMutations`, `useUpdateRotationConfig`, `useShiftOverrideMutations`; all invalidate a shared schedule set (`shifts-pattern`, `shift-patterns`, `rotation-config`, `shifts-now`, `current-shift`). `PatternTeam.kind?` + `PatternDay.override_id?` added as OPTIONAL (old backend still typechecks).
+- Wizard: `canNext` step 3 allows `teams.length === 0` (custom still requires ≥1); setup payload gains `globalShiftConfig: teams[0]?.shift_config ?? defaultShiftConfig(globalShiftType)`; `useApplyWizardConfig` type updated + invalidates `["dashboard"]`.
+- Start-shift (`routes/index.tsx`): `usePlantTeamsDetail` resolves the operator's own team → "Your team" chip when the shift matches, warning box when it differs; line `<select>` grouped into `<optgroup>` per area via `useAreas`+`useLines` (flat fallback); `ShiftState` gains optional `teamId`/`teamName` set in `handleStart`.
+
+**Gotchas:** rotating shift-hours decision — keep the codebase defaults 6-14/14-22/22-6 (user confirmed; do NOT "fix" to 7-15/15-23/23-7). `CyclePreview` prop typing deliberately duplicates the `ShiftConfig` union locally instead of importing it — avoids a circular import with `PlantSetupForm` (structural typing makes the real config assignable). Backend `update_shift_pattern` filters `None` values, so `active: false` PATCHes work but you can never set a field back to null. `require_desktop("supervisor")` on `/shift-patterns` writes is satisfied by console sessions (login sends `client_type:"desktop"`), same as `/users` directory.
+
+**Status:** `tsc` + `vite build` green; live smoke: dev `:8080` schedule → 200, `sup-1` login OK, `GET /shifts/pattern` → `teams: 0` rows (backend spec not yet applied) → page correctly renders the "No schedule generated yet" state + default preview. Full end-to-end (tracks strip, overrides, rotation PATCH, edit dialog writes) **blocked until the backend session applies SHIFT_GENERATOR_SPEC.md A1–A7**.
+
+**Lesson:** design the degrade path as a feature, not a fallback — every new server-driven visual (strip, kind rows, overrides) was shipped with an optional type field and a static default so the page is useful before the backend lands; the same pattern (spec-first to the backend session, frontend contracts typed optional) that saved the `/shifts/now` crash.
+
+
+---
+
+## 2026-10-03: Extended onboarding 422 fix - wizard shift_config mapped at the payload boundary
+
+**Bug:** `POST /admin/plants/{id}/setup` with the Extended Day + Night wizard mode returned `422 union_tag_invalid` on every `teams[i].shift_config`: the wizard's internal `ShiftConfig` union has a `type: "extended_rotating"` member (`hours.day`/`hours.night`), but the backend `TeamSetup.shift_config` discriminated union only accepts `regular_day | extended_day | night | rotating` (`app/schemas/shifts.py`). **Pre-existing** - extended mode was never end-to-end tested; not caused by the shift-generator frontend work. Also confirmed the backend session had NOT applied `SHIFT_GENERATOR_SPEC.md` yet (no `global_shift_config`/`shift_overrides`/`rotation-config` anywhere in `app/`), so the new `globalShiftConfig` field was being ignored as an extra - it would have become a second 422 once A1 landed.
+
+**Fix (user chose frontend mapping over backend union extension):**
+- `src/lib/admin-hooks.ts`: new `toBackendSetupPayload()` inside `useApplyWizardConfig.mutationFn` (the single `/setup` submit path -> verified by grep) maps every team config `type === "extended_rotating"` -> `{type:"night", start_hour, end_hour}` when `current_shift === "night"`, else `{type:"extended_day", ...}` with the team's own day/night hours. `regular_day`/`rotating` pass through (already structurally identical to backend types); `globalShiftConfig` passes through unmapped. Backend stores canonical `extended_day`/`night` docs the existing setup pattern branch and dashboard `_config_type` already understand - zero backend change needed for the user's blocked onboarding.
+- Spec delta (`optilog-backend/notes/SHIFT_GENERATOR_SPEC.md` A1): `global_shift_config` gets a NEW union (`GlobalShiftConfig`) with an `ExtendedRotatingConfig` member (`type + hours.day/hours.night`) - must NOT reuse the strict per-team `ShiftConfig`; roster synthesis takes day/night hours from it (defaults 7-19/19-7); contract note that per-team configs arrive canonical; `global_shift_type: "custom"` stays rejected (deferred, user confirmed leave-as-is).
+
+**Gotchas:** pydantic v2 ignores unknown body fields by default - that's why `globalShiftConfig` didn't error pre-A1 (absence of its 422 in the user's response was the tell that A1 wasn't applied). Custom mode would 422 on `global_shift_type` regex (`custom` not in pattern) - separate pre-existing gap, explicitly deferred. Smoke tests hit the API directly with the mapper's OUTPUT shape (PowerShell has no access to frontend TS code) - the mapper logic itself is covered by `tsc`.
+
+**Status:** `tsc` + `vite build` green. Live smoke (tenant-admin login, throwaway plants, all deleted): unmapped extended payload -> **422** (baseline reproduced); mapped payload -> **200** `{areas:1, lines:1, teams:3}`; `GET /shifts/pattern` -> 3 rows with correct stored configs (Team A `extended_day` 07:00-19:00, Team B `night` 19:00-07:00, Team C off); regular -> 200; rotating -> 200. User can now retry the real onboarding on plant `6ac0b224aa2b8c52dd2e1838`.
+
+**Lesson:** when a request 422s on a discriminated union, diff the sender's type against the receiver's union FIRST - and check which side is the "UI model" vs the "storage model". Translating at the single payload boundary (one choke-point hook) beats widening the backend union when the target type already has readers that only understand canonical members; for NEW fields (like `globalShiftConfig`) you're free to shape the union yourself - amend the spec before the backend session implements it.
+
+---
+
+## 2026-10-03: Onboarding preview rework - per-team 14-day rows
+
+**Change:** `CyclePreview` (`ShiftCycleStrip.tsx`) now renders one row per team across a 14-day grid (52px label column + 14 letter cells, header Mon..Sun twice). Each row is phase-shifted from its `current_shift`: rotating -> offset of `block` days (morning/afternoon/night/off -> 0/b/2b/3b), extended -> 0/1/2 (day/night/off); a new optional `teams` prop carries name + `current_shift` + per-team `shift_config` (row falls back to the panel config). All six PlantSetupForm call sites now pass `teams={teams}` - global-hours panels show the full roster, custom cards show every team with its own config; without `teams` (Schedule page fallbacks) it defaults to the wizard's roster (Team A-D / A-C / Team A). Regular preview also became 14-day for consistency. Column check: day 0 across rotating rows = M/A/N/- (2-2-2-2), one shift per crew. Also fixed `replaceConfig` rebuilding the team object and silently wiping `assigned_line_indices` on any shift-config edit (now `{...team, shift_config}`).
+
+**Lesson:** the old static preview showed a SINGLE crew phase wrapped over a Mon-Sun x2 grid - it could not express "each team's shift", which is exactly what the data-driven Schedule strip (rows x dates) shows. Keep static and data-driven versions of the same visual structurally identical (row per crew, label column, phase offsets) or onboarding will promise something the schedule page does not deliver. PS: `Add-Content` on this box writes ANSI - append learnings as pure ASCII (use `->` and `-`, not arrows/em-dashes), or byte-surgery a UTF-8 section afterwards.
+
+---
+
+## 2026-10-03: Supervisor "disappeared" - system_admin user PATCH corrupted tenant_id and wiped plant_ids
+
+**Symptom (user report):** assigned a supervisor to a new plant, he vanished, login says "user not found".
+
+**Root cause (audit field is `timestamp`, NOT `created_at`):** two `user.update` events at 09:33:43/09:34:36 (system_admin editing sup-1 then sup-2 in UserEditModal), fields `['name','plant_ids','active','tenant_id','updated_at']`. Backend `update_user_admin` (`app/domain/admin/service.py:878+`) had two flaws on the system_admin branch:
+1. line ~917: `updates["plant_ids"] = []` runs whenever `tenant_id` is present in the payload - the "same tenant, nothing to change" `pop` only exists in the NON-system_admin branch. UserEditModal.tsx:75 always sent `tenant_id` for system_admin, so every save silently wiped the plant assignments made in the same payload.
+2. `updates["tenant_id"]` was written straight from JSON as a STRING (plant_ids get `_to_oid` at line 929; tenant_id never did). `list_all_users` queries `tenant_id: _to_oid(...)` (line 689), so the corrupted users fell out of `GET /admin/users` entirely -> supervisor vanished from the Users page. Login was never broken (email lookup ignores tenant_id type) - the user's login failure is a separate mystery (asked which email they typed).
+
+**Repair (data):** Mongo `$set tenant_id: ObjectId(...)` for sup-1/sup-2 (the API cannot fix it - system_admin PATCH always re-sends a JSON string); plant_ids restored via PATCH as tenant-admin (non-system_admin branch pops tenant_id, bypassing both bugs). Verified: list returns 14/14 with `plants: [Factory Alpha]`, sup-1 login 200 with TestPass123!.
+
+**Fix (frontend, shipped):** UserEditModal sends `tenant_id` ONLY when `tenantId !== (user.tenant_id ?? "")` - bypasses both backend bugs for the common case; `tsc` + build green.
+
+**Fix (backend, DELIVERED AS PATCH for the user's backend session - do not edit their working copy):** in `update_user_admin` after tenant validation: `updates["tenant_id"] = _to_oid(new_tenant_id)` and guard the wipe with `if str(new_tenant_id) != str(user.get("tenant_id")): updates["plant_ids"] = []`. `create_user_admin` is already safe (`_to_oid` at line 855).
+
+**Gotchas:** audit `detail.fields` = payload keys (updates dict), NOT actual diffs; `list_plants` filters `active: True` (8 legacy/abandoned plants are soft-inactive, so only Factory Alpha appears in plant pickers - `scripts/cleanup_deleted_plants.py` hard-cleans those); teams have no `updated_at` on create (a "teams updated" query looks empty because the field is never set); login `client_type` only accepts `mobile`/`desktop` (frontend omits it - do not send `"web"`).
+
+---
+
+## 2026-10-04: Sign out goes straight to login - no cleared-dashboard frame
+
+**Bug:** console Sign out (`ConsoleShell.tsx`) did `logout()` (clearToken + `setState({user:null...})`) then `window.location.href = "/"`. The setState flushed a re-render of the console with `user: null` BEFORE the browser unloaded it, so the dashboard visibly emptied first; the login screen (`LoginScreen` is inline at `/` via `routes/index.tsx:90` - there is no dedicated /login route) only appeared after the reload.
+
+**Fix:**
+- `shift-log.ts` gains `logoutHard()`: `clearToken()` + `localStorage.removeItem(STORAGE_KEY)` + `location.replace("/")` - clears token and the PERSISTED store directly, WITHOUT `setState`/`emit`, so nothing re-renders before navigation. `replace` keeps the console out of history (Back skips it). Full reload also discards the React Query cache. Mobile `AppShell` keeps plain `logout()` (same-route in-place swap, no intermediate frame).
+- Why not just skip the state clear: the store persists the whole state to `shiftlog.state.v1` on every setState, and `restoreSession()` with no token only sets `loading: false` (it NEVER nulls a hydrated `user`, shift-log.ts:281-283) - navigating without clearing the persisted state would boot into a stale "logged-in" shift screen instead of the login page.
+
+**Gotcha (found by curl):** a token check in a route `beforeLoad` runs SERVER-side on fresh loads, where `getToken()` is always null (no window/localStorage) -> `/console` 307'd to `/` for EVERYONE, including logged-in refreshes. Guard must be window-gated (`typeof window !== "undefined" && !getToken()`), with fresh loads covered by a client-side component gate instead: `routes/console/route.tsx` `ConsoleGate` checks `useShiftLog().user` in an effect (Root only renders the Outlet after restoreSession, so `user` is authoritative) and `navigate({to:"/", replace:true})` - same pattern as `console/admin/route.tsx`.
+
+**Status:** `tsc` + build green; `curl /console` 200 (was 307 pre-fix), `curl /` 200.
+
+---
+
+## 2026-10-04: Layout tab — drag-and-drop team/line board (`/console/layout`)
+
+**What shipped:** new console nav entry **Layout** (`ConsoleShell.tsx` NAV, icon `LayoutGrid`) → `routes/console/layout.tsx` → `components/console/LayoutBoard.tsx`. Unplaced tray (+ "New team" via `POST /teams`), area sections with read-only line columns (droppable), team cards (draggable + sortable, per-line instances), member chips (sortable within a team, draggable between teams/pool), unassigned-people pool (supervisor+ only). Coverage actions on each card: "All lines", "Lines..." popover (checkboxes), "Remove placement". Permissions: view all roles (DndContext `sensors={[]}` + `disabled` on every sortable/draggable), edit = `hasMinRole(role, "supervisor")` (backend already gates `POST/PATCH /teams*` with `require_desktop("supervisor")`). Deps added: `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` (React 19 compatible; react-beautiful-dnd is abandoned).
+
+**Data model:** `team.assigned_line_ids: string[]` (absent/[] = unplaced tray, non-empty = card renders on each line — many-to-many) + `team.sort_order: int` (order within a column). Both optional on `TeamDetail` so an un-patched backend degrades to "all teams unplaced" (the designed default anyway). Drag line1→line2 = move (remove source instance's line, add target); multi-line precision via the checkbox popover; "All lines" = PATCH every line id. Member moves use `POST /teams/{id}/members` full-replace — backend already pulls the member from their old team (one-team-per-user). `useUpdateTeam`/`useSetTeamMembers` do optimistic `teams-detail` patches with snapshot rollback (`onMutate`/`onError`), invalidating `["dashboard"]` on settle.
+
+**dnd-kit gotchas:**
+- A team placed on N lines renders N card instances — dnd-kit ids MUST be unique, so ids are instance-scoped: `t:{lineId|tray}:{teamId}` and `m:{lineId|tray|pool}:{userId}`. Drop handling branches on `over.data.current.kind` (member/team/line/pool/tray) instead of parsing ids; `active.data.current.instance` carries the source line for move semantics.
+- Read-only mode = pass `sensors={[]}` to DndContext (sensors prop replaces defaults) AND `disabled: true` on each `useSortable`/`useDraggable`.
+- PointerSensor `activationConstraint: {distance: 8}` lets clicks reach the chip "x" and card buttons; the "x" also stops `pointerdown` propagation so it never starts a drag.
+
+**Line/area API gotchas:** `GET /plants/{id}/lines` (`list_plant_lines`, dashboard service) returns ONLY `{id, name}` — `area_id` stripped — so `useLines` data cannot be grouped by area (pre-existing breakage on `data.tsx:85` and `index.tsx:194`; backend fix = LAYOUT_SPEC A8). The area-nested route lives under the **`/assets/` prefix**: `GET /assets/areas/{areaId}/lines` returns full docs incl. `area_id` (a bare `/areas/.../lines` 404s — check `openapi.json` paths, frontend hook paths and actual routes differ). New `usePlantLinesByArea(plantId)` composite query fetches areas + per-area lines in parallel and returns `{area, lines}[]` groups; LayoutBoard dropped `useAreas`/`useLines` and the orphan-line logic (no area-delete endpoint exists, so orphans can't occur).
+
+**Environment/data notes:** the demo DB was reset before this task (10 of 15 users deactivated incl. sup-1/sup-2, 0 plants). Created sandbox plant **"Layout Sandbox"** `6ac19dd8f547e57f92febbb6` (2 areas/3 lines/3 teams via `POST /admin/plants/{id}/setup`) and assigned it to tenant-admin's `plant_ids` (plant_manager >= supervisor, so it exercises every board mutation) for browser testing. **No `DELETE /teams` endpoint exists** — the smoke-created team was hidden with `PATCH {active:false}` instead. `LAYOUT_SPEC.md` A1–A5 were applied by the user's backend session while this frontend work was in progress (uvicorn --reload) and verified live: setup `assigned_line_indices: [0,2]` → `assigned_line_ids: [L1, L3]`; PATCH persists + rejects foreign/junk line ids.
+
+**PowerShell 5.1 + curl.exe:** JSON bodies passed as `-d '{...}'` or via here-string variables arrive mangled (`{"detail":"json_invalid","input":{}}`) — write the payload with `Set-Content` to `$env:TEMP\*.json` and use `--data-binary "@$file"`. `$pid` is a read-only automatic variable (assignment throws with `$ErrorActionPreference='Stop'`) — use `$plantId`.
+
+---
+
+## 2026-10-04: Onboarding wizard claimed success while creating nothing (setupApplied bypass)
+
+**Bug:** a full wizard run in "Use My Setup" mode produced a plant with 0 areas / 0 lines / 0 teams (Teams tab empty, Schedule showed the default day pattern, Layout tray empty). Server reads proved `POST /admin/plants/{id}/setup` never ran (areas `[]`, teams `[]`, pattern `{teams: []}`) while plant creation, tenant, and pm-2's plant_ids assignment were all correct - frontend-only.
+
+**Root cause:** `OnboardingWizard.tsx` persists `{step, data, plantId}` including `data.setupApplied` to localStorage (`optilog.onboarding.v1`, 24h TTL). Step-4 Next did `if (data.setupApplied) { setStep(5); return; }` - a stale flag from an earlier session jumped straight to the Review screen (instant "success", green banner "Your wizard configuration has been applied") with NO POST. Secondary hazards: all three catch blocks were `catch {}` with comment "Error handled by mutation" (nobody handled it); the Skip card promised "set up areas, lines, and teams later from the plant dashboard" (that UI does not exist - no frontend caller of `POST /assets/plants/{id}/areas` or `/areas/{id}/lines`, Teams tab has no create either); Review claims were gated on `setupMode` alone.
+
+**Fix (OnboardingWizard.tsx + api.ts):**
+- `checkPlantSetup(plantId)`: GET `/assets/plants/{id}/areas` + `/plants/{id}/teams` in parallel -> "applied" (both non-empty: advance + `setupConfirmed`) / "empty" (clear the flag and fall through to a real POST) / "partial" (error, refuse - re-running duplicates rows). The persisted flag is now a hint, never authority.
+- `stepError` state (cleared on step change) replaces the mutation-isError banner; every catch sets it via `errorMessage()` (ApiError.message). Stale `plantId` (PATCH 404) -> inline "Create new plant instead" button (`setPlantId(null)`).
+- Review banner + Teams summary gated on `setupConfirmed` (set only by a real response or a passing verification); Skip card + review copy no longer point at the nonexistent dashboard flow and warn how many areas/lines/teams Skip discards.
+- api.ts: FastAPI 422 `detail` is an ARRAY of `{loc, msg}` - the old code cast `detail` to string (undefined) and fell back to "Request failed (422)"; both error blocks now extract `detail[0].msg` (identical blocks -> `replaceAll`).
+
+**Diagnosis trail:** wrong-plant/tenant hypothesis killed by admin reads (pm-2 plant_ids = only the new plant, same tenant); the `setupApplied` bypass was the only code path to Review without a POST (a real 2xx would have created rows). `setup_plant` writes no audit record - backend spec note if observability is wanted later.
+
+**Status:** tsc + build green. User will delete the empty plant and redo onboarding.
+
+---
+
+## 2026-10-04: Console empty-states + ONBOARDING_TENANT_SPEC.md (two-phase fix, phase 1 = spec only)
+
+**Root cause (proved live, backend):** `setup_plant` (admin/service.py:415) does `tenant_id = user["tenant_id"]` -> `None` for system_admin `admin@optilog.com` -> `_to_oid(None)` **generates a fresh random ObjectId per call** (`ObjectId(None)` is a valid new id). Plant doc kept the correct tenant (from the URL), but every child (areas/lines/teams/shift_patterns) got a random tenant -> all tenant-filtered console reads return `[]` for EVERY user. Data exists; it is invisible. `seed_service.py:158-162` already does it right (derive tenant from plant + access check) - that is the model for A1.
+
+**Read-side half:** list endpoints filter by the CALLER's tenant, so system_admin (`tenant_id: null`) gets `[]` everywhere (proved: sandbox areas `[]` as admin@). This also makes the wizard's verify-before-reapply (`checkPlantSetup`) see "empty" under system_admin and re-POST duplicates - the frontend hardening is only tenant-correct AFTER spec A2.
+
+**Delete cascade:** `delete_plant` (service.py:310-326) sets `active: false, plant_ids: []` on members whose only plant was deleted -> every delete+re-onboard cycle silently bricks test accounts (pm-2 ended deactivated). `member_summary` (388) exposes a `deactivated` counter; grep confirms ZERO frontend consumers (`useDeletePlant` admin-hooks.ts:140 ignores the response body) -> safe to drop in A4.
+
+**Shipped (frontend, gates green: tsc + vite build):**
+- `notes/ONBOARDING_TENANT_SPEC.md` in the BACKEND repo: A1 setup_plant plant-derived tenant, A2 plant-scoped reads derive tenant from parent doc (assets/dashboard/patterns/lines list fns), A3 4 regression tests, A4 drop member deactivation on delete. Sequencing warning inside: apply BEFORE re-onboarding Fact Alpha or the data re-corrupts.
+- New `components/console/EmptyPlantState.tsx` (dashed card, title+description).
+- `ConsoleGate` (console/route.tsx): `plant_ids: []` and NOT on `/console/admin/*` -> "No plant assigned" card (+ admin console link only for `hasMinRole(..., "plant_manager") && user.tenant_id`); admin paths pass through so onboarding/user management stay reachable plantless.
+- Teams page: `teams.data` empty (after loading/error branches) -> EmptyPlantState inside ConsoleShell.
+- LayoutBoard: `lines.length === 0` inline div upgraded to EmptyPlantState (tray above still renders, so existing teams stay visible).
+- Schedule: new branch `pattern ok && teams.data empty` -> EmptyPlantState; loading branch now also waits on `teams.isLoading` (otherwise flash of "No schedule generated yet"). Pre-existing `stripRows === 0` state kept (it shows the default CyclePreview - good).
+
+**Decisions honored:** no wizard auto-assign of users to plants (user assigns later); repair = user deletes + re-onboards AFTER applying the spec (I did not write to Mongo); tenant fix + delete fix folded into ONE spec file; spec delivered as `notes/` markdown (user applies in their pytest session).
+- Follow-up: ConsoleGate intercepts BEFORE ConsoleShell mounts, so the "No plant assigned" card renders with no sidebar - the System Admin nav item (`ConsoleShell.tsx:40`) was unreachable for admin@ (tenant_id null hid the admin link). Card now carries a role-based launcher: system_admin && !tenant_id -> "Open the System Admin console" -> `/console/admin/system` (route guard admits system_admin only, `admin/system.tsx:15`); plant_manager+ && tenant_id -> existing `/console/admin/{tenant_id}` link. Note admin@ IS a console user (login pre-fills it, `/console` gate is auth-only) - it just must not see plant data.
+- Follow-up 2: `ConsoleShell` rendered all 11 plant NAV tabs + plant header pills unconditionally, so system_admin (no plant) saw dead tabs and a misleading "Data layer live"/"-" plant pill. Now: `plantTabsVisible = hasPlant || (isAdmin && showPlantTabs)` gates both NAV maps (desktop :91, mobile :191); header shift/plant/data-live pills gated on `hasPlant` (sign-out always); a "Show/Hide plant tabs" toggle (visible only to plantless system_admin) persists to `localStorage["optilog.console.showPlantTabs"]`. Revealed tabs still land on the ConsoleGate card by design. Reversed per user choice: hidden by plant for everyone, re-reveal toggle is system_admin-only. Plant users see zero difference.
+
+---
+
+## 2026-10-04: Unified shift codes M/A/N/D/- (schedule grid + calendar) + defaults clarified
+
+**Vocabulary (user decision):** rotating 2-2-2-2 / 3-3-3-3 = morning/afternoon/night shown as **M/A/N** with off as **"-"** (not O); extended = **D/N**; regular = **D**. Canonical helpers `shiftTypeLetter`, `LETTER_STYLES/DOTS/LABELS`, `type Letter` MOVED from `components/ShiftCycleStrip.tsx` to `src/lib/shift-now.ts` (single source; strip imports them now). No behavior change to the strip/onboarding previews - they already used letters.
+
+**Changed surfaces (scope = grids + legends + calendar; banners/chips/dialog titles keep full words):**
+- `schedule.tsx`: weekly grid cell label `shiftLabel(...)` -> `shiftTypeLetter(...)` (M/A/N/D, off `-`, no-day stays "�"); hours line + override `*` unchanged; cell dialog still full word. NEW legend under the grid: letters seen in the visible week, first-seen hours per letter, dot colors from `shiftCellStyle(type).dot` (matches the grid palette, NOT the blue onboarding palette - the two palettes intentionally coexist).
+- `calendar.tsx`: legend entries now "M Morning / A Afternoon / N Night / D Day" (added the missing D entry for regular-day plants); month popover title = "M � Morning shift".
+- Off = "-" everywhere (user chose it to match existing strip).
+
+**Team-count defaults (user confirmed - NO code change):** wizard `PlantSetupForm.generateTeams()` already gives rotating_2222/3333 = **Team A-D** (morning/afternoon/night/off), extended_rotating = A-C, regular_day = A; matches backend `SHIFT_GENERATOR_SPEC.md` A1 roster table. The "only 3 teams" the user saw was MY test fixture `Layout Sandbox` (A/B/C + smoke team, all regular_day) - user will re-onboard it themselves (chose that over me driving API writes). Fact Alpha already deleted by user.
+
+**Backend constraints found (for future fixture work):** `POST/PATCH /teams` do NOT accept `current_shift` (only setup writes it + rotation team_order), and `setup_plant` APPENDS teams (no cleanup until spec A1) - so you cannot fix a roster in place; a fresh plant/setup is the only clean path.
+
+
+---
+
+## 2026-10-04: Bulk user actions (system + tenant admin tables) + Toaster mounted
+
+**Backend contract (wired by the backend session, verified in working tree):** `POST /admin/users/bulk-update` `{user_ids<=200, patch, plant_mode: replace|add|remove}` -> `{updated, failed:[{id,error}]}`; `POST /admin/users/bulk-delete` `{user_ids}` -> soft deactivate (`active=false`, parity with single `DELETE /admin/users/{id}`/"Deactivate"; self never allowed); `POST /admin/invitations/bulk-revoke` `{invitation_ids}` -> `{revoked, failed}`. Tenant-surface `POST /users/bulk-update` exists but has NO frontend consumer (both admin tables read `/admin/tenants/...` and `/admin/users`).
+
+**Backend rules that shaped the UI:** cross-tenant `plant_ids` = request-level 403, so the system (cross-tenant) table enables the plant dialog ONLY when every selected user shares one `tenant_id`; per-user failures are normal (rank/tenant/self) -> partial-failure dialog listing `name (email) - error`; bulk-update with `active:false` runs as action "deactivate" (system_admin may self-deactivate), bulk-delete never may.
+
+**Shipped (gates green: tsc + vite build client/SSR/nitro):**
+- New `components/admin/UserBulkActions.tsx`: `useUserSelection` (Set; cleared on page/filter change - `page_size` max 100 < 200 cap, so no request chunking), action bar (Activate / Deactivate / Assign plants... / Remove plants... / Change role... / Clear) + AlertDialog confirm with name preview, plant chip dialog (add/remove mode), role dialog (`hasMinRole`-filtered options, system_admin never grantable), failure dialog; sonner toasts for results.
+- `SystemUserTable` / `TenantUserTable`: checkbox column (header = select-all-on-page with indeterminate state), colSpan 7->8 / 6->7, bar rendered between filters and table; `emitFilters` clears selection.
+- New `components/admin/PendingInvitations.tsx` extracted from the two near-identical invitation blocks (`console/admin/$tenantId` + `console/admin/system/tenant/$tenantId`): select-all + per-row checkboxes + "Revoke selected" + single-row trash with toast on error; pages keep their own empty states via the `empty` prop and dropped now-unused `useRevokeInvitation` / `date-fns format` / `ClientOnly` imports (only the old block used them).
+- `<Toaster position="top-right" richColors />` mounted for the FIRST time in `src/routes/__root.tsx` (inside QueryClientProvider) - sonner was installed and vendored (`ui/sonner.tsx`) but never mounted, so `toast()` would have been a no-op before.
+- `admin-hooks.ts`: `useBulkUpdateUsers` / `useBulkDeleteUsers` invalidate `["system","users"]` + `["admin","tenants"]`; `useBulkRevokeInvitations(tenantId)` invalidates the invitations key.
+
+**Manual matrix pending (backend on):** deactivate 2 users, activate, plant add/remove, role change, select self+other for partial failure, bulk revoke 2 invitations, selection clears on page change.
+
+- Follow-up (user rejected the first visual): bulk bar restyled to the DESIGN.md console world - flat `border-border bg-card` plate (was `border-primary/30 bg-primary/5` amber wash, violating the Amber Rarity Rule), count as uppercase 12/700 micro-label with `tabular-nums`, all five buttons KEPT (user choice over a "More actions" menu) but grouped by 1px `h-5 w-px bg-border` dividers (status / assignment / role), Activate = `variant="secondary"`, Deactivate + Revoke = ghost `text-destructive hover:bg-destructive/10` (Fault Red = destructive only), `...` suffixes dropped, Clear = ghost icon-only X with aria-label, pending spinner moved to the count label. Same treatment in `PendingInvitations.tsx`. Gates + `impeccable detect` clean.
+
+- Follow-up 2 (user request: confirmation + no-op prechecks): every bulk action now has a precheck + a confirm dialog. Prechecks computed client-side from `SystemUser` fields: `activatable`/`deactivatable` subsets (buttons disabled when 0 with a `title` reason on a wrapper span - disabled buttons show no native tooltip in Chrome; partial selections show `Activate (3/5)` via `countSuffix` and SEND ONLY the changing ids so `res.updated` toasts stay truthful); `plantCandidates` hides no-op plants (add: skip plants already on all selected; remove: only plants assigned to >=1) with an "N of M affected" line, while the plant request still sends ALL selected ids because `$addToSet`/`$pull` are idempotent and one request cannot express per-user plant sets (toast uses the client-computed affected count instead of `res.updated`); `roleChanges` shows a live "N of M will change" line and disables Apply at 0, sending only differing ids. Confirmation = ONE shared `ConfirmSpec` AlertDialog (title/description/confirmLabel/destructive/onConfirm) replacing the deactivate-only state - opened directly by Activate/Deactivate, and opened ON TOP of the still-open plant/role form dialogs on Apply (Radix portals stack; Cancel returns to the form with state intact, Confirm closes both, errors close only the confirm). `PendingInvitations` bulk revoke got the same pattern (`confirmIds` state, red confirm). Gates + `impeccable detect` clean.
+
+---
+
+## 2026-10-05: Sign-out on the no-plant ConsoleGate card
+
+**Gap:** `/console` with no assigned plant renders `ConsoleGate`'s "No plant assigned" card (`src/routes/console/route.tsx`) *before* `ConsoleShell` mounts - so operators/technicians without a plant had NO way to sign out (the header's Sign out button never rendered).
+
+**Fix:** the gate card now renders its own Sign out button (`onClick={logoutHard}`, `LogOut` icon, ConsoleShell's pill styling) for every no-plant user **except** `system_admin` (`!hasMinRole(user.role, "system_admin")`), who instead gets the admin console launcher and stays signed in.
+
+**Gotcha:** two logout flavours exist - `logoutHard()` (clears token + persisted state directly, `location.replace("/")` - use this in the console to avoid an empty-render flash) vs soft `logout()` (setState, used by mobile `AppShell`).
+
+---
+
+## 2026-10-05: System admin tenant card counts were fabricated + per-plant onboarding details (read-only)
+
+**Bug 1 — `SystemTenantCard` counts:** cards showed `userCount` = users filtered from `GET /admin/users` **page 1, page_size=20** (platform-wide, so wrong for every tenant beyond the first 20 users) and `plantCount` = `stats.data.plants_per_tenant[tenant.id]` — a key backend `GET /admin/stats` **never returns** (`SystemStatsResponse` = totals + `tenants_by_status` + `users_by_role` only) → every card printed "0 plants". `normalizeStatsResponse`'s hedged `plants_per_tenant ?? {}` silently masked the mismatch.
+**Fix:** `SystemTenantCard` is now self-sufficient — it calls the existing `useTenantStats(tenant.id)` (`GET /admin/tenants/{id}/stats` → `{total_users, active_users, total_plants, pending_invitations, users_by_role}`, role `plant_manager+`, system_admin passes) and renders `total_plants`/`total_users`, with `…` while loading. The `userCount`/`plantCount` props were deleted from the component and both call sites (Recent Tenants + Tenants tab), and the dead `plants_per_tenant` line was dropped from `normalizeStatsResponse`. The Tenants-tab header count was switched from "active users among page 1" to `stats.data.total_users total users` (accurate platform total).
+
+**Feature — per-plant onboarding details, readable only:** new `src/components/admin/PlantOnboardingDetailsDialog.tsx`, mounted from a `ClipboardList` icon button on each `PlantCard` in the **system admin** tenant page (`console/admin/system/tenant/$tenantId/index.tsx`). Shows setup status badge (applied/partial/none — same areas+teams probe as the wizard's `checkPlantSetup`), location/timezone, area + line name chips, and teams with supervisor, member count and a human `shiftSummary()` for `shift_config` (`regular_day`/`rotating`/`extended_rotating`/`extended_day`/`night`). Reads `useAreas` + `useLines` + `usePlantTeamsDetail` (all `require_role("operator")` → system_admin OK); mounted conditionally so queries fire only while open.
+
+**Gotchas:**
+- Wizard-only metadata (`setupMode`, `preset`, `includeDemoData`, `setupApplied`, `lineShiftMode`) lives **only in localStorage `optilog.onboarding.v1` (24h, cleared on Done)** — it is never persisted server-side, so onboarding details can only be *derived* from live structure (areas/lines/teams), never read as stored form answers.
+- `noPropertyAccessFromIndexSignature: true` — `Record<string, unknown>` fields must be bracket-accessed (`config["start_hour"]`), TS4111 otherwise.
+- eslint on `admin-hooks.ts` / `system/index.tsx` still reports 12 pre-existing `no-explicit-any` errors — they predate this work; prettier drift in touched files was fixed with `npx eslint --fix`.
+- PowerShell: quote paths containing `$` (`'src/routes/console/admin/system/tenant/$tenantId/index.tsx'`), otherwise `$tenantId` interpolates as an unset variable.
+
+---
+
+## 2026-10-05: Voice logging capped at supervisor + ManagerHome for shift_manager+
+
+**Decision (user-confirmed):** the voice logging flow (`/` → timeline → end-shift → report) is a floor tool — **operator, technician, supervisor only** (`shift_manager` and above are out). Managers get a distinct mobile screen; team membership excludes plant_manager+.
+
+**Shipped:**
+- `src/lib/shift-log.ts`: two new gates next to `hasMinRole` — `canLogShift(role)` (`!hasMinRole(role, "shift_manager")`) and `canBeTeamMember(role)` (`!hasMinRole(role, "plant_manager")`).
+- `src/routes/index.tsx` `Index()`: after the login check, `!canLogShift(user.role)` → `<ManagerHome />`, so shift_manager/plant_manager/integration_admin/system_admin never see StartShift/Record even with a persisted active shift.
+- New `src/components/shift/ManagerHome.tsx`: greeting + role, read-only "Running now" card (`useShiftsNow` → shift window + team on shift; degrades to a plain card when no plant/no data), primary **Open operations console** button, secondary **Sign out**. Header actions come from `AppShell`.
+- `src/components/shift/AppShell.tsx`: pending-sync badge + offline simulator toggle are now gated on `canLogShift` (they only mean something to loggers); console link + sign-out stay for everyone.
+- Route guards in `timeline.tsx` / `end-shift.tsx` / `report.tsx`: `useEffect` redirect to `/` (replace) + `return null` when `state.user && !canLogShift(...)` — all hooks run before the early return (rules-of-hooks safe).
+- `TeamMembersDialog` add-member candidates filter on `canBeTeamMember(u.role)` — plant_manager+ users never appear in the picker (they have no crew).
+- `ConsoleShell` sidebar link relabels to "Mobile manager home" for non-loggers (still points to `/`).
+
+**Gotchas:**
+- The start-shift "Team" row needed no explicit hide: plant_manager+ can no longer reach `StartShiftScreen` at all — the team-row requirement is satisfied by the screen swap (answer was "Both").
+- `hasMinRole` is `>=`, so "up to X" checks must be inverted (`!hasMinRole(role, "next_role")`) — there is no `hasMaxRole`.
+- The 4 `no-explicit-any` errors in `index.tsx` (SpeechRecognition ambient decls, lines 18-21) and 12 in `admin-hooks.ts`/`system/index.tsx` are pre-existing — touched files are otherwise lint-clean after `eslint --fix`.
+
+**Follow-up:** the same read-only `PlantOnboardingDetailsDialog` was added to the **tenant admin** plant cards too (`console/admin/$tenantId/index.tsx` PlantCard — identical ClipboardList button/state pattern as the system admin page). Its "use the onboarding wizard (Add Plant)" copy fits there naturally since that page owns the wizard route. Also cleaned the file's pre-existing prettier drift + `role as any` → `role as Role` so it lints clean.
+
+---
+
+## 2026-10-05: Onboarding wizard — "Seed with Preset" and "Skip" removed (UI-only)
+
+**Decision (user-confirmed):** step 4 drops the three option cards; it becomes a **summary-only** step ("Review what onboarding will create, then apply it" + the areas/lines/teams/shift-type list) and `STEPS[4]` is renamed **"Seed Data" → "Apply Setup"**. Cleanup depth was explicitly **UI-only**: `SeedPresetSelector.tsx`, `useSeedPlant`, the `SeedPreset` type, `WizardData.preset`/`includeDemoData`/`setupMode`, `handleNext`'s preset/skip branches, the review-step preset/skip copy, and the step-4 button ternary all stay in the code (now unreachable but intact).
+
+**Shipped (`src/components/admin/OnboardingWizard.tsx` only):**
+- `EMPTY_DATA.setupMode` default `"preset"` → `"config"` — critical: with no cards to click, the only selectable path must be the default, or Next would silently run the preset seed.
+- `handleResume` coerces saved drafts: `setData({ ...saved.data, setupMode: "config" })` — localStorage blobs ≤24h old can still carry `"preset"`/`"skip"`, which would diverge from the summary-only UI.
+- Step-4 render: card grid + preset-selector/demo-checkbox + skip-warning blocks deleted; summary made unconditional; intro copy now "Review what onboarding will create, then apply it:".
+- The wizard's now-unused `SeedPresetSelector` import removed (dead import = lint error; the component file itself remains).
+
+**Gotchas:**
+- "UI-only removal" still requires forcing the surviving branch (`default` + resume coercion) — hiding the selector without pinning `setupMode` leaves a state that applies a preset the user can no longer see.
+- `tsc` + eslint (after `npx eslint --fix` for 2 prettier drift lines in `handleNext`) + `vite build` all green.
+
+---
+
+## 2026-10-05: Lines step rebuilt — count means TOTAL lines, not lines per area
+
+**Bug report:** with 4 areas, toggling the Lines-step count 1 → 2 → 1 left the step showing **4 line rows**; user expected 1. Root cause was two compounding behaviors in `PlantSetupForm.tsx` (`setAllCounts`): (a) the control was **"Lines per area"** — it rebuilt `lines` as `areas.length × n`, so with 4 areas the box reads 1 while 4 rows exist; (b) an **initial-state asymmetry** — `EMPTY_DATA.lines` gives only area 0 one line, so areas added in step 1 start with 0 lines and the first touch of the count control "fills" every area, making `1 → 2 → 1` end with MORE total lines than it started with (looks like lines were created out of nowhere). Verified nothing was persisted (plant had 0 areas/0 lines in Mongo — setup only runs at Apply Setup).
+
+**Decisions (user-confirmed):** count = **n lines total for the plant** (4 areas + count 1 → exactly 1 line record); the 4 areas are **zones along the line** (not parallel departments); lines attach to the **first area** (backend `LineSetup.area_index` is required — `admin/service.py` maps it to `area_id`, so a line must own exactly one area; "line spans all zones" would need `area_id` optional + Layout/Data-tree/ picker changes — explicitly out of scope).
+
+**Shipped:**
+- `PlantSetupForm.tsx` Lines step: `setAllCounts` (per-area rebuild) → `setLineCount(n)` creating exactly `n` entries `{name: lines[i]?.name ?? \`Line-${i+1}\`, areaIndex: 0}` — also fixes a pre-existing quirk where ANY count change reset renamed lines (old lookup matched only default `Line-i` names); input relabeled **"Number of lines"** with `value={lines.length}`; per-area cards replaced by a flat list + zones caption. Areas-step copy updated to zones wording.
+- Teams step: grouped `"Zone › lines | ..."` line summary → plain comma list; assign-line chips dropped the `{areaName} › ` prefix (all lines share area 0 now).
+- `OnboardingWizard.tsx`: new `normalizeLines()` applied in `handleResume` alongside the `setupMode` coercion — dedupes by name (order-preserving), forces `areaIndex: 0`, falls back to `[{name:"Line-1", areaIndex:0}]`. This migrates in-flight drafts saved by the old per-area logic: `[Line-1 ×4]` → 1 line, `[L1,L2,L1,L2]` → 2 lines (recovers the user's intended total from their stuck draft).
+- Pre-existing lint debt in the touched file cleaned: 214 prettier-drift errors via `eslint --fix`, and the 3 `no-explicit-any` (`normalizeArrayResponse(response: any)` → `unknown` + envelope cast; `api.get<any>` copy-areas → `api.get<unknown>` + typed generic — note the old helper returned the raw object when `items`/`data` were absent, which would have crashed `.map`; the new one returns `[]`).
+
+**Gotchas:**
+- Resume-time migrations are the only defense for old localStorage drafts (24h TTL) — every semantic change to `WizardData` needs a coercion in `handleResume`, next to `setupMode: "config"`.
+- Backend accepts the new shape unchanged (payload keeps `areaIndex: 0`); `PlantSetup`, `canNext`, Apply summary (`namedLines = lines.length`) and `assigned_line_indices` all keyed off `lines` directly, so they follow the new semantics with no edits.
+- Consequence accepted: in Layout/Data tree the line renders under the FIRST area's section only; other zones show no line columns. `PlantSetupForm.tsx` still has 3 pre-existing `react-refresh/only-export-components` warnings (value exports alongside components) — left alone.
+- Gates: `tsc` clean, `eslint` 0 errors, `vite build` exit 0.
+
+---
+
+## 2026-10-05: Schedule tab — highlight the current shift cell
+
+**Request:** "In schedule tab, highlight the current shift card." Clarified with the user: the target is the **single weekly-grid cell** where today's column meets the row of the team working RIGHT NOW (not today's whole column, not the strip), styled as **"a color that pops from the rest, no need for text"** (no "Now" badge), and **no highlight at all when nothing is running** (`current_shift` null / team unknown).
+
+**Shipped (`src/routes/console/schedule.tsx` only):**
+- `useShiftsNow(plantId)` added to the hook block (before the `if (!plantId)` early return — rules-of-hooks); `currentShift = shiftsNow.data?.current_shift ?? null`.
+- Per-cell `isCurrent = !!currentShift && !!day && pt.team_id === currentShift.team?.id && col === currentShift.date`; rendered as `isCurrent && "ring-2 ring-success"` placed AFTER the existing `col === today && "ring-1 ring-primary/40"` in the `cn()` so tailwind-merge's last-wins upgrades the today column's faint amber ring to a solid green one.
+- Color choice: the theme token `--color-success` (oklch green, `src/styles.css:108`) — already the "running" color in `CurrentShiftBanner` (`text-success`) — pops against the yellow/orange/indigo/sky cell tints without text. `ring-success` works because Tailwind v4 generates ring utilities from `@theme` color tokens.
+- Gated on `day` (a current shift with no pattern cell would otherwise ring a disabled dimmed "—" cell); `team === null` naturally matches nothing (`undefined === pt.team_id` is false), satisfying the no-fallback decision. 60s poll + `retry: false` come free from the hook.
+
+**Gotchas:**
+- `useShiftsNow` types (`CurrentShift.date`, `NowTeam.id`) were already corrected in the 2026-10-03 shape-mismatch fix — no new contract risk; the cell highlight is read-only and degrades to "nothing highlighted" on any mismatch (e.g., `date` off from the local `cols` strings), same philosophy as the banner/pill.
+- Prettier drift in the file (5 errors, 3 of them pre-existing elsewhere in the file) fixed with `npx eslint --fix`; gates: `tsc` clean, eslint 0 errors, `vite build` exit 0.
+
+---
+
+## 2026-10-05: Layout tab rework — searchable people rail + zones strip + flat line columns
+
+**Requests (user-confirmed via questions):** (1) unassigned people as a **vertical, searchable panel**; (2) a **better plant-structure view** now that the lines model is resolved (areas = zones along the line; every `Line.area_id` points at the FIRST area); (3) rail = **sticky right rail**; structure = **zones strip + flat line columns**; (4) rail stays **manage-only** (supervisor+, same as the old pool section).
+
+**Shipped (`src/components/console/LayoutBoard.tsx` + 1 subtitle line in `src/routes/console/layout.tsx`):**
+- **Shell:** `grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]` (second column only when `canManage`, so view-only users don't get an empty 288px gutter); main child has `min-w-0` — required or the line columns' `overflow-x-auto` stretches the grid track instead of scrolling. Below `xl` the rail stacks last (old pool position).
+- **Rail:** card with title + count (`tabular-nums`, switches to `3 / 12` while filtering), search input (`h-9 rounded-lg border bg-secondary … focus:border-ring`, same pattern as `TeamMembersDialog`), then the droppable list (`poolRef` moved here from the section; `max-h-[calc(100vh-14rem)] overflow-y-auto`). Filter is case-insensitive over `name`/`email`/`role`; empty states distinguish loading / everyone assigned / no match. `PoolChip` restyled from a wrap chip to a full-width vertical row (name + 11px uppercase role chip per chip-source spec, `role.replace(/_/g," ")`); drag data (`instance:"pool"`) unchanged.
+- **Structure:** per-area sections (which rendered area 1 full + areas 2..n as empty headers under the new model) replaced by (a) a **zones strip** — numbered area chips joined by `ArrowRight` in API order under an uppercase "Zones along the line" label — and (b) **one flat row of every `LineColumn`** (`groups.flatMap(g => g.lines)`); header now carries `N zones · N lines · N teams` in `tabular-nums`. `LineColumn` gained optional `areaName` shown only when `lines` span >1 `area_id` (legacy multi-area plants get a tag; the uniform new-model case stays clean).
+- Coverage `Lines…` popover flattened (dropped the meaningless single "AREA 1" group header); structure caption, empty state, and route subtitle reworded to zones.
+
+**Gotchas:**
+- `exactOptionalPropertyTypes: true` — an optional prop receiving an explicit `string | undefined` expression must be typed `areaName?: string | undefined`, not `areaName?: string` (TS2375).
+- The rail's `xl:sticky xl:top-24` is sized to clear the console's sticky header (~80px: `py-4` + h1 + subtitle); if the header grows, revisit the offset.
+- Grid + `overflow-x-auto` children always need `min-w-0` on the track child — classic CSS-grid blowout, caught before runtime by knowing the rule, not by the typechecker.
+- Gates: `tsc` clean, eslint 0 errors (136 indent-drift errors fixed via `--fix`), `vite build` exit 0. DnD handlers, tray, dialogs, and hooks untouched — no API surface changes.

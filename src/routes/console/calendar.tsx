@@ -1,17 +1,20 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { format, startOfMonth } from "date-fns";
+import { ClientOnly } from "@/components/ui/ClientOnly";
 import { CalendarClock, ChevronDown, ChevronRight, Loader2, X } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { useShiftLog } from "@/lib/shift-log";
 import { ApiError } from "@/lib/api";
+import { useFormattedDate, useFormattedTime } from "@/lib/locale";
 import {
   useShiftsMonth,
   type ShiftDaySummary,
   type ShiftEventSummary,
   type ShiftMonthShift,
 } from "@/lib/hooks";
+import { SHIFT_COLORS, shiftTypeLetter } from "@/lib/shift-now";
 
 export const Route = createFileRoute("/console/calendar")({
   head: () => ({
@@ -27,12 +30,6 @@ export const Route = createFileRoute("/console/calendar")({
   }),
   component: CalendarPage,
 });
-
-const SHIFT_COLORS: Record<string, string> = {
-  morning: "bg-yellow-400",
-  afternoon: "bg-orange-400",
-  night: "bg-indigo-400",
-};
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "bg-red-500",
@@ -121,13 +118,16 @@ function CalendarPage() {
           />
           <div className="mt-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-full bg-yellow-400" /> Morning
+              <span className="size-2 rounded-full bg-yellow-400" /> M Morning
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-full bg-orange-400" /> Afternoon
+              <span className="size-2 rounded-full bg-orange-400" /> A Afternoon
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-full bg-indigo-400" /> Night
+              <span className="size-2 rounded-full bg-indigo-400" /> N Night
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-2 rounded-full bg-sky-400" /> D Day
             </span>
           </div>
         </div>
@@ -150,11 +150,13 @@ function CalendarPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">
-                  {new Date(selectedDay + "T00:00:00").toLocaleDateString("en-US", {
-                    weekday: "long",
-                    month: "long",
-                    day: "numeric",
-                  })}
+                  <ClientOnly fallback={<span>{format(selectedDay + "T00:00:00", "EEEE, MMMM d, yyyy")}</span>}>
+                    {new Date(selectedDay + "T00:00:00").toLocaleDateString("en-US", {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  </ClientOnly>
                 </h2>
                 <button
                   type="button"
@@ -211,7 +213,9 @@ function ShiftCard({
         <span className={`size-3 shrink-0 rounded-full ${dotColor}`} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-sm font-semibold capitalize">{shift.shift_type} shift</span>
+            <span className="truncate text-sm font-semibold capitalize">
+              {shiftTypeLetter(shift.shift_type)} · {shift.shift_type} shift
+            </span>
             <span className="text-xs text-muted-foreground">{shift.team_name}</span>
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -253,11 +257,13 @@ function EventRow({ event }: { event: ShiftEventSummary }) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium leading-snug break-words">{event.observation || event.event_type}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {new Date(event.timestamp).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: false,
-            })}{" "}
+              <ClientOnly fallback={<span>{format(new Date(event.timestamp), "HH:mm")}</span>}>
+                {new Date(event.timestamp).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                })}
+              </ClientOnly>{" "}
             · <span className="capitalize">{event.event_type}</span>
             {event.severity ? (
               <>

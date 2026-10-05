@@ -1,7 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { ConsoleShell, StatCard, SourceBadge } from "@/components/console/ConsoleShell";
+import { CurrentShiftBanner } from "@/components/console/CurrentShiftBanner";
 import { SOURCE_LABEL } from "@/lib/ops-model";
+import { useFormattedNumber, formatNumber } from "@/lib/locale";
+import { ClientOnly } from "@/components/ui/ClientOnly";
 import { useShiftLog } from "@/lib/shift-log";
 import {
   useAssetRollup,
@@ -96,8 +99,17 @@ function Dashboard() {
 
   return (
     <ConsoleShell title="Plant dashboard" subtitle="Today — all teams, all shifts">
+      <CurrentShiftBanner />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Production achievement" value={`${s?.achievement ?? 0}%`} hint={`${(s?.produced ?? 0).toLocaleString()} of ${(s?.target ?? 0).toLocaleString()} units`} tone="success" />
+        <StatCard label="Production achievement" value={`${s?.achievement ?? 0}%`} hint={
+              <>
+                <ClientOnly fallback={<span>{formatNumber(s?.produced ?? 0)}</span>}>
+                  {(s?.produced ?? 0).toLocaleString()}
+                </ClientOnly> of <ClientOnly fallback={<span>{formatNumber(s?.target ?? 0)}</span>}>
+                  {(s?.target ?? 0).toLocaleString()}
+                </ClientOnly> units
+              </>
+            } tone="success" />
         <StatCard label="Downtime" value={`${s?.downtime ?? 0} min`} hint={`Across ${s?.lineCount ?? 0} active lines`} tone="warning" />
         <StatCard label="Active issues" value={s?.activeIssues ?? 0} hint={`${s?.unresolved ?? 0} unresolved`} tone="danger" />
         <StatCard label="RCA pending" value={s?.rcaPending ?? 0} hint={`${s?.quality ?? 0} quality events today`} />

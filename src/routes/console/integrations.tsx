@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { ClientOnly } from "@/components/ui/ClientOnly";
 import { ArrowLeftRight, ArrowDownToLine, ArrowUpFromLine, Loader2 } from "lucide-react";
 import { ConsoleShell, SourceBadge, StatCard } from "@/components/console/ConsoleShell";
-import { SOURCE_LABEL } from "@/lib/ops-model";
+import { SOURCE_LABEL, type SourceSystem } from "@/lib/ops-model";
 import { useShiftLog } from "@/lib/shift-log";
+import { formatNumber } from "@/lib/locale";
 import { usePlantConnectors, type ConnectorRow } from "@/lib/hooks";
 
 export const Route = createFileRoute("/console/integrations")({
@@ -64,7 +66,7 @@ function IntegrationsPage() {
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard label="Connectors" value={connectors.length} hint="Inbound · outbound · two-way" />
-            <StatCard label="Records ingested (24h)" value={total.toLocaleString()} tone="success" />
+            <StatCard label="Records ingested (24h)" value={<ClientOnly fallback={<span>{formatNumber(total)}</span>}>{total.toLocaleString()}</ClientOnly>} tone="success" />
             <StatCard
               label="Degraded"
               value={connectors.filter((c) => c.health !== "healthy").length}
@@ -109,7 +111,7 @@ function IntegrationsPage() {
                       <p className="mt-1 font-mono text-xs text-muted-foreground">{connector.endpoint}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <SourceBadge>{SOURCE_LABEL[connector.system] ?? connector.system.toUpperCase()}</SourceBadge>
+                      <SourceBadge>{SOURCE_LABEL[connector.system as SourceSystem] ?? connector.system.toUpperCase()}</SourceBadge>
                       <SourceBadge>{connector.kind}</SourceBadge>
                       <SourceBadge>{connector.health}</SourceBadge>
                     </div>
@@ -118,7 +120,9 @@ function IntegrationsPage() {
                     <div className="rounded-lg border border-border py-2">
                       <p className="text-xs text-muted-foreground">Records 24h</p>
                       <p className="text-sm font-semibold tabular-nums">
-                        {connector.records_24h.toLocaleString()}
+                        <ClientOnly fallback={<span>{formatNumber(connector.records_24h)}</span>}>
+                          {connector.records_24h.toLocaleString()}
+                        </ClientOnly>
                       </p>
                     </div>
                     <div className="rounded-lg border border-border py-2">

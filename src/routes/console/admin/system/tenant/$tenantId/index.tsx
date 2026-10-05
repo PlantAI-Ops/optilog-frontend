@@ -3,64 +3,52 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   Loader2,
   Users,
-  UserCheck,
   Factory,
-  Mail,
+  Shield,
+  AlertCircle,
+  TrendingUp,
+  ArrowLeft,
   Save,
   Plus,
   Pencil,
   Trash2,
   Building2,
+  Mail,
+  UserCheck,
   ClipboardList,
 } from "lucide-react";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
+import {
+  useTenant,
+  useTenantPlants,
+  useTenantInvitations,
+  useInviteUser,
+  useUpdatePlant,
+  useDeletePlant,
+  useTenantUsers,
+  type UserListFilters,
+} from "@/lib/admin-hooks";
+import { useShiftLog, hasMinRole } from "@/lib/shift-log";
 import { TrialStatusBadge } from "@/components/admin/TrialStatusBadge";
 import { PlantOnboardingDetailsDialog } from "@/components/admin/PlantOnboardingDetailsDialog";
 import { UserInviteForm, type InviteResult } from "@/components/admin/UserInviteForm";
 import { CsvInviteUpload } from "@/components/admin/CsvInviteUpload";
 import { PendingInvitations } from "@/components/admin/PendingInvitations";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
 import { TenantUserTable } from "@/components/admin/TenantUserTable";
 import { UserEditModal } from "@/components/admin/UserEditModal";
 import { CreateUserModal } from "@/components/admin/CreateUserModal";
-import { UserRoleBadge } from "@/components/admin/UserRoleBadge";
-import {
-  useTenant,
-  useTenantPlants,
-  useUpdatePlant,
-  useDeletePlant,
-  useTenantInvitations,
-  useInviteUser,
-  useTenantUsers,
-  useTenantStats,
-  type UserListFilters,
-} from "@/lib/admin-hooks";
-import { useShiftLog } from "@/lib/shift-log";
-import type { AdminPlant, Role, SystemUser } from "@/lib/shift-log";
+import { EmptyState } from "@/components/admin/EmptyState";
+import type { AdminPlant, SystemUser } from "@/lib/shift-log";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 
-const TIMEZONES = [
-  "UTC",
-  "America/New_York",
-  "America/Chicago",
-  "America/Denver",
-  "America/Los_Angeles",
-  "Europe/London",
-  "Europe/Berlin",
-  "Africa/Lagos",
-  "Asia/Tokyo",
-  "Asia/Shanghai",
-];
-
-type Tab = "overview" | "members" | "plants" | "invitations";
-
-export const Route = createFileRoute("/console/admin/$tenantId/")({
+export const Route = createFileRoute("/console/admin/system/tenant/$tenantId/")({
   head: () => ({
-    meta: [{ title: "Tenant Details | OptiLog Admin" }],
+    meta: [{ title: "Tenant Dashboard | OptiLog System Admin" }],
   }),
-  component: TenantDetailPage,
+  component: SystemTenantDashboardPage,
 });
 
 /* -------------------------------------------------------------------------- */
@@ -233,7 +221,20 @@ function PlantCard({
 /*                             main page                                      */
 /* -------------------------------------------------------------------------- */
 
-function TenantDetailPage() {
+const TIMEZONES = [
+  "UTC",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "Europe/London",
+  "Europe/Berlin",
+  "Africa/Lagos",
+  "Asia/Tokyo",
+  "Asia/Shanghai",
+];
+
+function SystemTenantDashboardPage() {
   const { tenantId } = Route.useParams();
   const navigate = useNavigate();
   const user = useShiftLog().user;
@@ -242,67 +243,53 @@ function TenantDetailPage() {
   const deletePlant = useDeletePlant(tenantId);
   const invitations = useTenantInvitations(tenantId);
   const inviteUser = useInviteUser(tenantId);
-  const [showInvite, setShowInvite] = useState(false);
-  const [inviteMode, setInviteMode] = useState<"manual" | "csv">("manual");
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
-  const [showCreateUser, setShowCreateUser] = useState(false);
-  const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
   const [userPage, setUserPage] = useState(1);
   const [userFilters, setUserFilters] = useState<UserListFilters>({ active: "all" });
-
   const tenantUsers = useTenantUsers(tenantId, {
     page: userPage,
     page_size: 20,
     ...userFilters,
   });
-  const stats = useTenantStats(tenantId);
 
-  const isSystemAdmin = user?.role === "system_admin";
-  const inScope = !!user && (isSystemAdmin || user.tenant_id === tenantId);
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteMode, setInviteMode] = useState<"manual" | "csv">("manual");
+  const [activeTab, setActiveTab] = useState<"overview" | "members" | "plants" | "invitations">(
+    "overview",
+  );
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
 
-  // Reset members paging/filters when switching tenants.
   useEffect(() => {
     setUserPage(1);
     setUserFilters({ active: "all" });
   }, [tenantId]);
 
-  // Non system admins may only ever view their own tenant.
   useEffect(() => {
-    if (!user || isSystemAdmin) return;
-    if (user.tenant_id && user.tenant_id !== tenantId) {
-      navigate({
-        to: "/console/admin/$tenantId",
-        params: { tenantId: user.tenant_id },
-        replace: true,
-      });
-    } else if (!user.tenant_id) {
+    if (!user || !hasMinRole(user.role, "system_admin")) {
       navigate({ to: "/console", replace: true });
     }
-  }, [user, tenantId, isSystemAdmin, navigate]);
+  }, [user, navigate]);
 
-  if (!inScope) return null;
+  if (!user || !hasMinRole(user.role, "system_admin")) {
+    return null;
+  }
 
   const loading =
-    tenant.isLoading ||
-    plants.isLoading ||
-    invitations.isLoading ||
-    tenantUsers.isLoading ||
-    stats.isLoading;
-  const error =
-    tenant.error || plants.error || invitations.error || tenantUsers.error || stats.error;
+    tenant.isLoading || plants.isLoading || invitations.isLoading || tenantUsers.isLoading;
+  const error = tenant.error || plants.error || invitations.error || tenantUsers.error;
 
   return (
     <ConsoleShell
-      title={tenant.data?.name ?? "Tenant Details"}
+      title={tenant.data?.name ?? "Tenant Dashboard"}
       {...(tenant.data ? { subtitle: `@${tenant.data.slug}` } : {})}
     >
       <div className="mb-4 flex items-center gap-3">
         <button
           type="button"
-          onClick={() => navigate({ to: "/console/admin" })}
+          onClick={() => navigate({ to: "/console/admin/system" })}
           className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary"
         >
-          Back to Admin
+          <ArrowLeft className="h-3.5 w-3.5" /> Back to System Admin
         </button>
       </div>
 
@@ -318,7 +305,8 @@ function TenantDetailPage() {
           role="alert"
           className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm font-medium text-destructive"
         >
-          Failed to load tenant. {error.message}
+          Failed to load tenant.{" "}
+          {(tenant.error || plants.error || invitations.error || tenantUsers.error)?.message}
         </div>
       )}
 
@@ -347,7 +335,9 @@ function TenantDetailPage() {
           {/* Tabs */}
           <Tabs
             value={activeTab}
-            onValueChange={(value: string) => setActiveTab(value as Tab)}
+            onValueChange={(value: string) =>
+              setActiveTab(value as "overview" | "members" | "plants" | "invitations")
+            }
             className="w-full"
           >
             <TabsList className="grid w-full grid-cols-4">
@@ -368,106 +358,21 @@ function TenantDetailPage() {
 
             {/* OVERVIEW TAB */}
             <TabsContent value="overview" className="mt-6 space-y-6">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-border bg-card p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <Users className="size-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Total Users
-                      </p>
-                      <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                        {stats.data?.total_users ?? 0}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-border bg-card p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-lg bg-success/10 text-success">
-                      <UserCheck className="size-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Active Users
-                      </p>
-                      <p className="mt-1 text-2xl font-bold tabular-nums text-success">
-                        {stats.data?.active_users ?? 0}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-border bg-card p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-lg bg-warning/10 text-warning">
-                      <Factory className="size-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Plants
-                      </p>
-                      <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                        {stats.data?.total_plants ?? 0}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-border bg-card p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
-                      <Mail className="size-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Pending Invites
-                      </p>
-                      <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                        {stats.data?.pending_invitations ?? 0}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* User Role Breakdown */}
-              {stats.data?.users_by_role && Object.keys(stats.data.users_by_role).length > 0 && (
-                <div className="rounded-xl border border-border bg-card p-4">
-                  <h3 className="mb-3 text-sm font-semibold">User Role Breakdown</h3>
-                  <div className="flex flex-wrap gap-4">
-                    {Object.entries(stats.data.users_by_role).map(([role, count]) => (
-                      <div key={role} className="flex items-center gap-2">
-                        <UserRoleBadge role={role as Role} variant="compact" />
-                        <span className="text-2xl font-bold tabular-nums">{count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Quick Actions */}
               <div className="rounded-xl border border-border bg-card p-4">
                 <h3 className="mb-4 text-sm font-semibold">Quick Actions</h3>
                 <div className="flex flex-wrap gap-3">
                   <Button onClick={() => setShowCreateUser(true)}>
-                    <Plus className="mr-2 h-4 w-4" /> Add Member
+                    <Plus className="mr-2 h-4 w-4" /> Create User
                   </Button>
-                  <Button variant="outline" onClick={() => setActiveTab("invitations")}>
+                  <Button variant="outline" onClick={() => setShowInvite(true)}>
                     <Mail className="mr-2 h-4 w-4" /> Invite Users
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      navigate({ to: "/console/admin/$tenantId/onboard", params: { tenantId } })
-                    }
-                  >
-                    <Plus className="mr-2 h-4 w-4" /> Add Plant
+                  <Button variant="outline" onClick={() => setActiveTab("plants")}>
+                    <Factory className="mr-2 h-4 w-4" /> Add Plant
                   </Button>
                 </div>
               </div>
 
-              {/* Tenant Info */}
               <div className="rounded-xl border border-border bg-card p-4">
                 <h3 className="mb-4 text-sm font-semibold">Tenant Info</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -502,7 +407,9 @@ function TenantDetailPage() {
             {/* MEMBERS TAB */}
             <TabsContent value="members" className="mt-6 space-y-6">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-sm font-semibold">Members ({tenantUsers.data?.total ?? 0})</h2>
+                <h2 className="text-sm font-semibold">
+                  Tenant Members ({tenantUsers.data?.total ?? 0})
+                </h2>
                 <Button onClick={() => setShowCreateUser(true)}>
                   <Plus className="mr-2 h-4 w-4" /> Add Member
                 </Button>
@@ -523,7 +430,6 @@ function TenantDetailPage() {
                   onDeleteUser={setEditingUser}
                   plants={plants.data ?? []}
                   loading={tenantUsers.isLoading}
-                  onAddUser={() => setShowCreateUser(true)}
                 />
               )}
             </TabsContent>
@@ -559,9 +465,23 @@ function TenantDetailPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  No plants yet. Click "Add Plant" to set one up.
-                </p>
+                <EmptyState
+                  icon={Factory}
+                  title="NO PLANTS"
+                  description="Add a plant to start configuring production lines and shifts"
+                  action={{
+                    label: "Add Plant",
+                    onClick: () => setActiveTab("plants"),
+                    icon: Plus,
+                  }}
+                  secondaryAction={{
+                    label: "Invite Users",
+                    onClick: () => setShowInvite(true),
+                    variant: "outline",
+                  }}
+                  stats={[{ label: "Max Plants", value: String(tenant.data?.max_plants ?? 0) }]}
+                  variant="section"
+                />
               )}
             </TabsContent>
 
@@ -569,7 +489,7 @@ function TenantDetailPage() {
             <TabsContent value="invitations" className="mt-6 space-y-6">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-sm font-semibold">Pending Invitations</h2>
-                <Button variant="outline" onClick={() => setShowInvite(!showInvite)}>
+                <Button variant="outline" onClick={() => setShowInvite(true)}>
                   <Mail className="mr-2 h-4 w-4" /> Invite Users
                 </Button>
               </div>
@@ -641,7 +561,20 @@ function TenantDetailPage() {
               <PendingInvitations
                 tenantId={tenantId}
                 invitations={invitations.data}
-                empty={<p className="text-sm text-muted-foreground">No pending invitations.</p>}
+                empty={
+                  <EmptyState
+                    icon={Mail}
+                    title="NO PENDING INVITATIONS"
+                    description="Invite users to join this tenant and start collaborating"
+                    action={{
+                      label: "Invite Users",
+                      onClick: () => setShowInvite(true),
+                      icon: Plus,
+                    }}
+                    stats={[{ label: "Max Users", value: String(tenant.data?.max_users ?? 0) }]}
+                    variant="section"
+                  />
+                }
               />
             </TabsContent>
           </Tabs>
@@ -666,7 +599,6 @@ function TenantDetailPage() {
             onSuccess={() => {
               // Queries auto-invalidate via hooks
             }}
-            tenantId={tenantId}
           />
         </>
       )}

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SeedPresetSelector } from "./SeedPresetSelector";
 import {
   PlantSetupForm,
   type AreaData,
@@ -18,8 +17,10 @@ import {
 } from "@/lib/admin-hooks";
 import type { SeedPreset } from "@/lib/shift-log";
 import { defaultShiftConfig } from "./PlantSetupForm";
+import { useLocalStorageState } from "@/lib/useLocalStorage";
+import { api, ApiError } from "@/lib/api";
 
-const STEPS = ["Plant Details", "Areas", "Lines", "Teams", "Seed Data", "Review"];
+const STEPS = ["Plant Details", "Areas", "Lines", "Teams", "Apply Setup", "Review"];
 
 const STORAGE_KEY = "optilog.onboarding.v1";
 const STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -49,6 +50,7 @@ interface SavedWizardState {
 }
 
 function readSavedState(): SavedWizardState | null {
+  if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -66,6 +68,7 @@ function readSavedState(): SavedWizardState | null {
 }
 
 function writeSavedState(state: SavedWizardState) {
+  if (typeof window === "undefined") return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
@@ -74,6 +77,7 @@ function writeSavedState(state: SavedWizardState) {
 }
 
 function clearSavedState() {
+  if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
@@ -83,6 +87,41 @@ function clearSavedState() {
 
 function stepLabel(step: number): string {
   return STEPS[step] ?? `Step ${step + 1}`;
+}
+
+type SetupCheck = "applied" | "empty" | "partial";
+
+// Ask the server whether this plant actually has its setup, instead of
+// trusting the persisted setupApplied flag (stale localStorage can claim
+// success while the plant was never configured).
+async function checkPlantSetup(plantId: string): Promise<SetupCheck> {
+  const [areas, teams] = await Promise.all([
+    api.get<unknown[]>(`/assets/plants/${plantId}/areas`),
+    api.get<unknown[]>(`/plants/${plantId}/teams`),
+  ]);
+  const hasAreas = areas.length > 0;
+  const hasTeams = teams.length > 0;
+  if (hasAreas && hasTeams) return "applied";
+  if (!hasAreas && !hasTeams) return "empty";
+  return "partial";
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.message) return err.message;
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
+function normalizeLines(lines: LineData[]): LineData[] {
+  const seen = new Set<string>();
+  const out: LineData[] = [];
+  for (const line of lines) {
+    const key = line.name.trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name: line.name, areaIndex: 0 });
+  }
+  return out.length > 0 ? out : [{ name: "Line-1", areaIndex: 0 }];
 }
 
 const EMPTY_DATA: WizardData = {
@@ -97,7 +136,7 @@ const EMPTY_DATA: WizardData = {
   lineShiftMode: "all",
   globalShiftType: "regular_day",
   customShiftName: "",
-  setupMode: "preset",
+  setupMode: "config",
   setupApplied: false,
 };
 
@@ -106,6 +145,10 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
   const [data, setData] = useState<WizardData>({ ...EMPTY_DATA });
   const [plantId, setPlantId] = useState<string | null>(null);
   const [seedResult, setSeedResult] = useState<Record<string, number> | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
+  const [stalePlant, setStalePlant] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [setupConfirmed, setSetupConfirmed] = useState(false);
 
   const [showResume, setShowResume] = useState(false);
   const [resumeInfo, setResumeInfo] = useState<{
@@ -161,6 +204,11 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
     }
   }, [tenantId]);
 
+  // Errors belong to the step that produced them
+  useEffect(() => {
+    setStepError(null);
+  }, [step]);
+
   // Cleanup timer on unmount
   useEffect(() => {
     return () => {
@@ -172,9 +220,16 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
     const saved = readSavedState();
     if (saved && saved.tenantId === tenantId) {
       setStep(saved.step);
-      setData(saved.data);
+      // Older drafts could hold setupMode "preset"/"skip" and per-area line
+      // duplication — coerce both onto the current single-count config path.
+      setData({
+        ...saved.data,
+        setupMode: "config",
+        lines: normalizeLines(saved.data.lines),
+      });
       setPlantId(saved.plantId || null);
     }
+    setStepError(null);
     setShowResume(false);
     setResumeInfo(null);
   }, [tenantId]);
@@ -186,6 +241,9 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
     // Keep an already-created plant: abandoning it here would orphan the record,
     // and the next Next at step 0 reuses it instead of creating a duplicate.
     setSeedResult(null);
+    setSetupConfirmed(false);
+    setStepError(null);
+    setStalePlant(false);
     setShowResume(false);
     setResumeInfo(null);
   }, []);
@@ -209,15 +267,47 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
           });
           setPlantId(result.id);
         }
+        setStalePlant(false);
         setStep(1);
-      } catch {
-        // Error handled by mutation
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          setStalePlant(true);
+          setStepError("The saved plant no longer exists. Create a new one to continue.");
+        } else {
+          setStepError(errorMessage(err, "Could not save plant details."));
+        }
       }
     } else if (step === 4) {
-      if (!plantId) return;
-      if (data.setupApplied) {
-        setStep(5);
+      if (!plantId) {
+        setStepError("No plant was created yet. Go back to step 1 and try again.");
         return;
+      }
+      if (data.setupApplied) {
+        // Never trust the persisted flag alone: stale localStorage can claim
+        // success while the plant has no areas or teams at all.
+        setVerifying(true);
+        let check: SetupCheck;
+        try {
+          check = await checkPlantSetup(plantId);
+        } catch (err) {
+          setStepError(errorMessage(err, "Could not verify the plant setup status."));
+          return;
+        } finally {
+          setVerifying(false);
+        }
+        if (check === "applied") {
+          setSetupConfirmed(true);
+          setStep(5);
+          return;
+        }
+        if (check === "partial") {
+          setStepError(
+            "Setup was only partially applied to this plant. Re-running setup would create duplicate areas, lines, or teams - start a fresh onboarding for a new plant instead.",
+          );
+          return;
+        }
+        // Flag was stale (plant is empty): fall through and apply for real.
+        update({ setupApplied: false });
       }
       try {
         if (data.setupMode === "config") {
@@ -227,8 +317,11 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
             teams: data.teams,
             globalShiftType: data.globalShiftType,
             customShiftName: data.customShiftName,
+            globalShiftConfig:
+              data.teams[0]?.shift_config ?? defaultShiftConfig(data.globalShiftType),
           });
           setSeedResult(result.created);
+          setSetupConfirmed(true);
           update({ setupApplied: true });
         } else if (data.setupMode === "preset") {
           const result = await seedPlant.mutateAsync({
@@ -236,12 +329,15 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
             include_demo_data: data.includeDemoData,
           });
           setSeedResult(result.created);
+          setSetupConfirmed(true);
           update({ setupApplied: true });
         }
         // skip: no API call, just move to review
         setStep(5);
-      } catch {
-        // Error handled by mutation
+      } catch (err) {
+        setStepError(
+          errorMessage(err, "Setup could not be applied. Check the values and try again."),
+        );
       }
     } else {
       setStep((s) => Math.min(s + 1, STEPS.length - 1));
@@ -256,8 +352,9 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
     if (step === 0) return data.plantName.trim().length > 0;
     if (step === 2) return data.lines.length > 0 && data.lines.every((l) => l.name.trim());
     if (step === 3) {
-      if (data.teams.length === 0) return false;
       if (data.globalShiftType === "custom") {
+        // Custom is teams-only — at least one team with its own config required.
+        if (data.teams.length === 0) return false;
         for (let i = 0; i < data.teams.length; i++) {
           for (let j = i + 1; j < data.teams.length; j++) {
             const a = data.teams[i];
@@ -266,7 +363,8 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
           }
         }
       } else {
-        // For rotating/extended: no two teams can share the same current shift
+        // Rotating/extended/regular: roster is optional — the backend generates
+        // crew teams from the shift pattern when none are entered.
         const shifts = data.teams.map((t) => t.current_shift).filter((s): s is string => !!s);
         if (new Set(shifts).size !== shifts.length) return false;
       }
@@ -276,6 +374,10 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
     if (step === 4) return true;
     return true;
   };
+
+  const namedAreas = data.areas.filter((a) => a.name.trim()).length;
+  const namedLines = data.lines.filter((l) => l.name.trim()).length;
+  const namedTeams = data.teams.filter((t) => t.name.trim()).length;
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -375,7 +477,7 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
           </div>
         )}
 
-        {step === 1 && (
+        {step === 1 && plantId && (
           <PlantSetupForm
             areas={data.areas}
             setAreas={(areas) => update({ areas })}
@@ -390,10 +492,12 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
             setGlobalShiftType={(globalShiftType) => update({ globalShiftType })}
             customShiftName={data.customShiftName}
             setCustomShiftName={(customShiftName) => update({ customShiftName })}
+            tenantId={tenantId}
+            plantId={plantId}
           />
         )}
 
-        {step === 2 && (
+        {step === 2 && plantId && (
           <PlantSetupForm
             areas={data.areas}
             setAreas={(areas) => update({ areas })}
@@ -408,10 +512,12 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
             setGlobalShiftType={(globalShiftType) => update({ globalShiftType })}
             customShiftName={data.customShiftName}
             setCustomShiftName={(customShiftName) => update({ customShiftName })}
+            tenantId={tenantId}
+            plantId={plantId}
           />
         )}
 
-        {step === 3 && (
+        {step === 3 && plantId && (
           <PlantSetupForm
             areas={data.areas}
             setAreas={(areas) => update({ areas })}
@@ -426,100 +532,27 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
             setGlobalShiftType={(globalShiftType) => update({ globalShiftType })}
             customShiftName={data.customShiftName}
             setCustomShiftName={(customShiftName) => update({ customShiftName })}
+            tenantId={tenantId}
+            plantId={plantId}
           />
         )}
 
         {step === 4 && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Choose how to populate your plant with data:
+              Review what onboarding will create, then apply it:
             </p>
 
-            {/* 3 option cards */}
-            <div className="grid gap-3 sm:grid-cols-3">
-              <button
-                type="button"
-                onClick={() => update({ setupMode: "config" })}
-                className={`rounded-xl border p-4 text-left transition-colors ${
-                  data.setupMode === "config"
-                    ? "border-primary bg-primary/5 ring-1 ring-primary"
-                    : "border-border hover:border-primary/50"
-                }`}
-              >
-                <p className="text-sm font-semibold">Use My Setup</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Send your areas, lines, and teams from the wizard to the backend.
-                </p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => update({ setupMode: "preset" })}
-                className={`rounded-xl border p-4 text-left transition-colors ${
-                  data.setupMode === "preset"
-                    ? "border-primary bg-primary/5 ring-1 ring-primary"
-                    : "border-border hover:border-primary/50"
-                }`}
-              >
-                <p className="text-sm font-semibold">Seed with Preset</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Create demo data from a predefined template (minimal, standard, or full).
-                </p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => update({ setupMode: "skip" })}
-                className={`rounded-xl border p-4 text-left transition-colors ${
-                  data.setupMode === "skip"
-                    ? "border-primary bg-primary/5 ring-1 ring-primary"
-                    : "border-border hover:border-primary/50"
-                }`}
-              >
-                <p className="text-sm font-semibold">Skip</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Finish without seeding. The plant will exist but have no operational data.
-                </p>
-              </button>
+            {/* Summary of the wizard configuration */}
+            <div className="rounded-lg border border-border bg-secondary/50 p-4">
+              <p className="text-sm font-medium">What will be created:</p>
+              <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                <li>{namedAreas} area(s)</li>
+                <li>{namedLines} line(s)</li>
+                <li>{namedTeams} team(s)</li>
+                <li>Shift type: {data.globalShiftType.replace(/_/g, " ")}</li>
+              </ul>
             </div>
-
-            {/* Summary for "Use My Setup" */}
-            {data.setupMode === "config" && (
-              <div className="rounded-lg border border-border bg-secondary/50 p-4">
-                <p className="text-sm font-medium">What will be created:</p>
-                <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-                  <li>{data.areas.filter((a) => a.name.trim()).length} area(s)</li>
-                  <li>{data.lines.filter((l) => l.name.trim()).length} line(s)</li>
-                  <li>{data.teams.filter((t) => t.name.trim()).length} team(s)</li>
-                  <li>Shift type: {data.globalShiftType.replace(/_/g, " ")}</li>
-                </ul>
-              </div>
-            )}
-
-            {/* Preset selector for "Seed with Preset" */}
-            {data.setupMode === "preset" && (
-              <>
-                <SeedPresetSelector value={data.preset} onChange={(preset) => update({ preset })} />
-                <label className="flex cursor-pointer items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={data.includeDemoData}
-                    onChange={(e) => update({ includeDemoData: e.target.checked })}
-                    className="accent-primary"
-                  />
-                  Include demo data (historical shifts, events, recordings)
-                </label>
-              </>
-            )}
-
-            {/* Info for "Skip" */}
-            {data.setupMode === "skip" && (
-              <div className="rounded-lg border border-border bg-secondary/50 p-4">
-                <p className="text-xs text-muted-foreground">
-                  You can set up areas, lines, and teams later from the plant dashboard.
-                </p>
-              </div>
-            )}
           </div>
         )}
 
@@ -533,15 +566,19 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
               <p className="text-sm font-medium text-green-800">Plant created successfully!</p>
               <p className="mt-1 text-sm text-green-700">
                 {data.plantName} is ready.
-                {data.setupMode === "config" && " Your wizard configuration has been applied."}
-                {data.setupMode === "preset" && ` Set up with the ${data.preset} preset.`}
+                {data.setupMode === "config" &&
+                  setupConfirmed &&
+                  " Your wizard configuration has been applied."}
+                {data.setupMode === "preset" &&
+                  setupConfirmed &&
+                  ` Set up with the ${data.preset} preset.`}
                 {data.setupMode === "skip" &&
-                  " No data was seeded — you can set up later from the dashboard."}
+                  " No data was seeded - run onboarding again whenever you want to configure the plant."}
               </p>
             </div>
 
             {/* Team summary with line assignments */}
-            {data.setupMode === "config" && data.teams.length > 0 && (
+            {data.setupMode === "config" && setupConfirmed && data.teams.length > 0 && (
               <div className="rounded-lg border border-border p-4">
                 <p className="text-sm font-medium">Teams &amp; Lines</p>
                 <div className="mt-2 space-y-1.5">
@@ -596,19 +633,25 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
       </div>
 
       {/* Error display */}
-      {(createPlant.isError ||
-        updatePlant.isError ||
-        seedPlant.isError ||
-        applyWizardConfig.isError) && (
+      {stepError && (
         <div
           role="alert"
           className="mt-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
         >
-          {createPlant.error?.message ||
-            updatePlant.error?.message ||
-            seedPlant.error?.message ||
-            applyWizardConfig.error?.message ||
-            "An error occurred"}
+          <p>{stepError}</p>
+          {stalePlant && (
+            <button
+              type="button"
+              onClick={() => {
+                setPlantId(null);
+                setStalePlant(false);
+                setStepError(null);
+              }}
+              className="mt-2 rounded-lg border border-destructive/40 px-3 py-1 text-xs font-medium hover:bg-destructive/10"
+            >
+              Create new plant instead
+            </button>
+          )}
         </div>
       )}
 
@@ -629,6 +672,7 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
             onClick={handleNext}
             disabled={
               !canNext() ||
+              verifying ||
               createPlant.isPending ||
               updatePlant.isPending ||
               seedPlant.isPending ||
@@ -636,7 +680,8 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
             }
             className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
-            {(createPlant.isPending ||
+            {(verifying ||
+              createPlant.isPending ||
               updatePlant.isPending ||
               seedPlant.isPending ||
               applyWizardConfig.isPending) && <Loader2 className="h-4 w-4 animate-spin" />}

@@ -24,6 +24,7 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
+import { ClientOnly } from "@/components/ui/ClientOnly";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { useShiftLog } from "@/lib/shift-log";
 import { ApiError } from "@/lib/api";
@@ -206,11 +207,13 @@ function MaintenancePage() {
             <div key={date}>
               <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
                 <CalendarDays className="size-4" />
-                {new Date(date + "T00:00:00").toLocaleDateString("en-US", {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                })}
+                <ClientOnly fallback={<span>{format(new Date(date + "T00:00:00"), "EEEE, MMMM d, yyyy")}</span>}>
+                  {new Date(date + "T00:00:00").toLocaleDateString("en-US", {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                  })}
+                </ClientOnly>
               </h2>
               <div className="space-y-3">
                 {(grouped[date] ?? []).map((item) => (

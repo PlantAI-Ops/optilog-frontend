@@ -4,8 +4,13 @@
 let lastCapturedError: { error: unknown; at: number } | undefined;
 const TTL_MS = 5_000;
 
+function now(): number {
+  if (typeof window === "undefined") return 0;
+  return Date.now();
+}
+
 function record(error: unknown) {
-  lastCapturedError = { error, at: Date.now() };
+  lastCapturedError = { error, at: now() };
 }
 
 // h3's HTTPError serializes to {"status":500,"unhandled":true,"message":"HTTPError"} —
@@ -71,7 +76,7 @@ if (typeof globalThis.addEventListener === "function") {
 
 export function consumeLastCapturedError(): unknown {
   if (!lastCapturedError) return undefined;
-  if (Date.now() - lastCapturedError.at > TTL_MS) {
+  if (now() - lastCapturedError.at > TTL_MS) {
     lastCapturedError = undefined;
     return undefined;
   }

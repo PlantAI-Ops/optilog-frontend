@@ -20,16 +20,21 @@ import { Route as ConsoleCalendarRouteImport } from './routes/console/calendar'
 import { Route as ConsoleDataRouteImport } from './routes/console/data'
 import { Route as ConsoleEventsRouteImport } from './routes/console/events'
 import { Route as ConsoleIntegrationsRouteImport } from './routes/console/integrations'
+import { Route as ConsoleLayoutRouteImport } from './routes/console/layout'
 import { Route as ConsoleMaintenanceRouteImport } from './routes/console/maintenance'
 import { Route as ConsoleRcaRouteImport } from './routes/console/rca'
+import { Route as ConsoleScheduleRouteImport } from './routes/console/schedule'
 import { Route as ConsoleShiftsRouteImport } from './routes/console/shifts'
 import { Route as ConsoleTeamsRouteImport } from './routes/console/teams'
 import { Route as InviteTokenRouteImport } from './routes/invite/$token'
 import { Route as ConsoleAdminIndexRouteImport } from './routes/console/admin/index'
 import { Route as ConsoleAdminTenantIdRouteImport } from './routes/console/admin/$tenantId'
+import { Route as ConsoleAdminSystemRouteImport } from './routes/console/admin/system'
 import { Route as ConsoleAdminTenantIdIndexRouteImport } from './routes/console/admin/$tenantId/index'
 import { Route as ConsoleAdminTenantIdInviteRouteImport } from './routes/console/admin/$tenantId/invite'
 import { Route as ConsoleAdminTenantIdOnboardRouteImport } from './routes/console/admin/$tenantId/onboard'
+import { Route as ConsoleAdminSystemIndexRouteImport } from './routes/console/admin/system/index'
+import { Route as ConsoleAdminSystemTenantTenantIdIndexRouteImport } from './routes/console/admin/system/tenant/$tenantId/index'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -86,6 +91,11 @@ const ConsoleIntegrationsRoute = ConsoleIntegrationsRouteImport.update({
   path: '/integrations',
   getParentRoute: () => ConsoleRouteRoute,
 } as any)
+const ConsoleLayoutRoute = ConsoleLayoutRouteImport.update({
+  id: '/layout',
+  path: '/layout',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
 const ConsoleMaintenanceRoute = ConsoleMaintenanceRouteImport.update({
   id: '/maintenance',
   path: '/maintenance',
@@ -94,6 +104,11 @@ const ConsoleMaintenanceRoute = ConsoleMaintenanceRouteImport.update({
 const ConsoleRcaRoute = ConsoleRcaRouteImport.update({
   id: '/rca',
   path: '/rca',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
+const ConsoleScheduleRoute = ConsoleScheduleRouteImport.update({
+  id: '/schedule',
+  path: '/schedule',
   getParentRoute: () => ConsoleRouteRoute,
 } as any)
 const ConsoleShiftsRoute = ConsoleShiftsRouteImport.update({
@@ -121,6 +136,11 @@ const ConsoleAdminTenantIdRoute = ConsoleAdminTenantIdRouteImport.update({
   path: '/$tenantId',
   getParentRoute: () => ConsoleAdminRouteRoute,
 } as any)
+const ConsoleAdminSystemRoute = ConsoleAdminSystemRouteImport.update({
+  id: '/system',
+  path: '/system',
+  getParentRoute: () => ConsoleAdminRouteRoute,
+} as any)
 const ConsoleAdminTenantIdIndexRoute =
   ConsoleAdminTenantIdIndexRouteImport.update({
     id: '/',
@@ -139,6 +159,17 @@ const ConsoleAdminTenantIdOnboardRoute =
     path: '/onboard',
     getParentRoute: () => ConsoleAdminTenantIdRoute,
   } as any)
+const ConsoleAdminSystemIndexRoute = ConsoleAdminSystemIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConsoleAdminSystemRoute,
+} as any)
+const ConsoleAdminSystemTenantTenantIdIndexRoute =
+  ConsoleAdminSystemTenantTenantIdIndexRouteImport.update({
+    id: '/tenant/$tenantId/',
+    path: '/tenant/$tenantId/',
+    getParentRoute: () => ConsoleAdminSystemRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -151,17 +182,22 @@ export interface FileRoutesByFullPath {
   '/console/data': typeof ConsoleDataRoute
   '/console/events': typeof ConsoleEventsRoute
   '/console/integrations': typeof ConsoleIntegrationsRoute
+  '/console/layout': typeof ConsoleLayoutRoute
   '/console/maintenance': typeof ConsoleMaintenanceRoute
   '/console/rca': typeof ConsoleRcaRoute
+  '/console/schedule': typeof ConsoleScheduleRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
   '/invite/$token': typeof InviteTokenRoute
   '/console/': typeof ConsoleIndexRoute
   '/console/admin/$tenantId': typeof ConsoleAdminTenantIdRouteWithChildren
+  '/console/admin/system': typeof ConsoleAdminSystemRouteWithChildren
   '/console/admin/': typeof ConsoleAdminIndexRoute
   '/console/admin/$tenantId/invite': typeof ConsoleAdminTenantIdInviteRoute
   '/console/admin/$tenantId/onboard': typeof ConsoleAdminTenantIdOnboardRoute
   '/console/admin/$tenantId/': typeof ConsoleAdminTenantIdIndexRoute
+  '/console/admin/system/': typeof ConsoleAdminSystemIndexRoute
+  '/console/admin/system/tenant/$tenantId/': typeof ConsoleAdminSystemTenantTenantIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -172,8 +208,10 @@ export interface FileRoutesByTo {
   '/console/data': typeof ConsoleDataRoute
   '/console/events': typeof ConsoleEventsRoute
   '/console/integrations': typeof ConsoleIntegrationsRoute
+  '/console/layout': typeof ConsoleLayoutRoute
   '/console/maintenance': typeof ConsoleMaintenanceRoute
   '/console/rca': typeof ConsoleRcaRoute
+  '/console/schedule': typeof ConsoleScheduleRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -182,6 +220,8 @@ export interface FileRoutesByTo {
   '/console/admin/$tenantId/invite': typeof ConsoleAdminTenantIdInviteRoute
   '/console/admin/$tenantId/onboard': typeof ConsoleAdminTenantIdOnboardRoute
   '/console/admin/$tenantId': typeof ConsoleAdminTenantIdIndexRoute
+  '/console/admin/system': typeof ConsoleAdminSystemIndexRoute
+  '/console/admin/system/tenant/$tenantId': typeof ConsoleAdminSystemTenantTenantIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -195,17 +235,22 @@ export interface FileRoutesById {
   '/console/data': typeof ConsoleDataRoute
   '/console/events': typeof ConsoleEventsRoute
   '/console/integrations': typeof ConsoleIntegrationsRoute
+  '/console/layout': typeof ConsoleLayoutRoute
   '/console/maintenance': typeof ConsoleMaintenanceRoute
   '/console/rca': typeof ConsoleRcaRoute
+  '/console/schedule': typeof ConsoleScheduleRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
   '/invite/$token': typeof InviteTokenRoute
   '/console/': typeof ConsoleIndexRoute
   '/console/admin/$tenantId': typeof ConsoleAdminTenantIdRouteWithChildren
+  '/console/admin/system': typeof ConsoleAdminSystemRouteWithChildren
   '/console/admin/': typeof ConsoleAdminIndexRoute
   '/console/admin/$tenantId/invite': typeof ConsoleAdminTenantIdInviteRoute
   '/console/admin/$tenantId/onboard': typeof ConsoleAdminTenantIdOnboardRoute
   '/console/admin/$tenantId/': typeof ConsoleAdminTenantIdIndexRoute
+  '/console/admin/system/': typeof ConsoleAdminSystemIndexRoute
+  '/console/admin/system/tenant/$tenantId/': typeof ConsoleAdminSystemTenantTenantIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -220,17 +265,22 @@ export interface FileRouteTypes {
     | '/console/data'
     | '/console/events'
     | '/console/integrations'
+    | '/console/layout'
     | '/console/maintenance'
     | '/console/rca'
+    | '/console/schedule'
     | '/console/shifts'
     | '/console/teams'
     | '/invite/$token'
     | '/console/'
     | '/console/admin/$tenantId'
+    | '/console/admin/system'
     | '/console/admin/'
     | '/console/admin/$tenantId/invite'
     | '/console/admin/$tenantId/onboard'
     | '/console/admin/$tenantId/'
+    | '/console/admin/system/'
+    | '/console/admin/system/tenant/$tenantId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -241,8 +291,10 @@ export interface FileRouteTypes {
     | '/console/data'
     | '/console/events'
     | '/console/integrations'
+    | '/console/layout'
     | '/console/maintenance'
     | '/console/rca'
+    | '/console/schedule'
     | '/console/shifts'
     | '/console/teams'
     | '/invite/$token'
@@ -251,6 +303,8 @@ export interface FileRouteTypes {
     | '/console/admin/$tenantId/invite'
     | '/console/admin/$tenantId/onboard'
     | '/console/admin/$tenantId'
+    | '/console/admin/system'
+    | '/console/admin/system/tenant/$tenantId'
   id:
     | '__root__'
     | '/'
@@ -263,17 +317,22 @@ export interface FileRouteTypes {
     | '/console/data'
     | '/console/events'
     | '/console/integrations'
+    | '/console/layout'
     | '/console/maintenance'
     | '/console/rca'
+    | '/console/schedule'
     | '/console/shifts'
     | '/console/teams'
     | '/invite/$token'
     | '/console/'
     | '/console/admin/$tenantId'
+    | '/console/admin/system'
     | '/console/admin/'
     | '/console/admin/$tenantId/invite'
     | '/console/admin/$tenantId/onboard'
     | '/console/admin/$tenantId/'
+    | '/console/admin/system/'
+    | '/console/admin/system/tenant/$tenantId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -364,6 +423,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleIntegrationsRouteImport
       parentRoute: typeof ConsoleRouteRoute
     }
+    '/console/layout': {
+      id: '/console/layout'
+      path: '/layout'
+      fullPath: '/console/layout'
+      preLoaderRoute: typeof ConsoleLayoutRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
     '/console/maintenance': {
       id: '/console/maintenance'
       path: '/maintenance'
@@ -376,6 +442,13 @@ declare module '@tanstack/react-router' {
       path: '/rca'
       fullPath: '/console/rca'
       preLoaderRoute: typeof ConsoleRcaRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
+    '/console/schedule': {
+      id: '/console/schedule'
+      path: '/schedule'
+      fullPath: '/console/schedule'
+      preLoaderRoute: typeof ConsoleScheduleRouteImport
       parentRoute: typeof ConsoleRouteRoute
     }
     '/console/shifts': {
@@ -413,6 +486,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleAdminTenantIdRouteImport
       parentRoute: typeof ConsoleAdminRouteRoute
     }
+    '/console/admin/system': {
+      id: '/console/admin/system'
+      path: '/system'
+      fullPath: '/console/admin/system'
+      preLoaderRoute: typeof ConsoleAdminSystemRouteImport
+      parentRoute: typeof ConsoleAdminRouteRoute
+    }
     '/console/admin/$tenantId/': {
       id: '/console/admin/$tenantId/'
       path: '/'
@@ -434,6 +514,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleAdminTenantIdOnboardRouteImport
       parentRoute: typeof ConsoleAdminTenantIdRoute
     }
+    '/console/admin/system/': {
+      id: '/console/admin/system/'
+      path: '/'
+      fullPath: '/console/admin/system/'
+      preLoaderRoute: typeof ConsoleAdminSystemIndexRouteImport
+      parentRoute: typeof ConsoleAdminSystemRoute
+    }
+    '/console/admin/system/tenant/$tenantId/': {
+      id: '/console/admin/system/tenant/$tenantId/'
+      path: '/tenant/$tenantId'
+      fullPath: '/console/admin/system/tenant/$tenantId/'
+      preLoaderRoute: typeof ConsoleAdminSystemTenantTenantIdIndexRouteImport
+      parentRoute: typeof ConsoleAdminSystemRoute
+    }
   }
 }
 
@@ -452,13 +546,29 @@ const ConsoleAdminTenantIdRouteChildren: ConsoleAdminTenantIdRouteChildren = {
 const ConsoleAdminTenantIdRouteWithChildren =
   ConsoleAdminTenantIdRoute._addFileChildren(ConsoleAdminTenantIdRouteChildren)
 
+interface ConsoleAdminSystemRouteChildren {
+  ConsoleAdminSystemIndexRoute: typeof ConsoleAdminSystemIndexRoute
+  ConsoleAdminSystemTenantTenantIdIndexRoute: typeof ConsoleAdminSystemTenantTenantIdIndexRoute
+}
+
+const ConsoleAdminSystemRouteChildren: ConsoleAdminSystemRouteChildren = {
+  ConsoleAdminSystemIndexRoute: ConsoleAdminSystemIndexRoute,
+  ConsoleAdminSystemTenantTenantIdIndexRoute:
+    ConsoleAdminSystemTenantTenantIdIndexRoute,
+}
+
+const ConsoleAdminSystemRouteWithChildren =
+  ConsoleAdminSystemRoute._addFileChildren(ConsoleAdminSystemRouteChildren)
+
 interface ConsoleAdminRouteRouteChildren {
   ConsoleAdminTenantIdRoute: typeof ConsoleAdminTenantIdRouteWithChildren
+  ConsoleAdminSystemRoute: typeof ConsoleAdminSystemRouteWithChildren
   ConsoleAdminIndexRoute: typeof ConsoleAdminIndexRoute
 }
 
 const ConsoleAdminRouteRouteChildren: ConsoleAdminRouteRouteChildren = {
   ConsoleAdminTenantIdRoute: ConsoleAdminTenantIdRouteWithChildren,
+  ConsoleAdminSystemRoute: ConsoleAdminSystemRouteWithChildren,
   ConsoleAdminIndexRoute: ConsoleAdminIndexRoute,
 }
 
@@ -471,8 +581,10 @@ interface ConsoleRouteRouteChildren {
   ConsoleDataRoute: typeof ConsoleDataRoute
   ConsoleEventsRoute: typeof ConsoleEventsRoute
   ConsoleIntegrationsRoute: typeof ConsoleIntegrationsRoute
+  ConsoleLayoutRoute: typeof ConsoleLayoutRoute
   ConsoleMaintenanceRoute: typeof ConsoleMaintenanceRoute
   ConsoleRcaRoute: typeof ConsoleRcaRoute
+  ConsoleScheduleRoute: typeof ConsoleScheduleRoute
   ConsoleShiftsRoute: typeof ConsoleShiftsRoute
   ConsoleTeamsRoute: typeof ConsoleTeamsRoute
   ConsoleIndexRoute: typeof ConsoleIndexRoute
@@ -484,8 +596,10 @@ const ConsoleRouteRouteChildren: ConsoleRouteRouteChildren = {
   ConsoleDataRoute: ConsoleDataRoute,
   ConsoleEventsRoute: ConsoleEventsRoute,
   ConsoleIntegrationsRoute: ConsoleIntegrationsRoute,
+  ConsoleLayoutRoute: ConsoleLayoutRoute,
   ConsoleMaintenanceRoute: ConsoleMaintenanceRoute,
   ConsoleRcaRoute: ConsoleRcaRoute,
+  ConsoleScheduleRoute: ConsoleScheduleRoute,
   ConsoleShiftsRoute: ConsoleShiftsRoute,
   ConsoleTeamsRoute: ConsoleTeamsRoute,
   ConsoleIndexRoute: ConsoleIndexRoute,

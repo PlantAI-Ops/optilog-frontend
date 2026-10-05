@@ -6,6 +6,8 @@ import { SOURCE_LABEL, STATUS_LABEL } from "@/lib/ops-model";
 import { ApiError } from "@/lib/api";
 import { useShiftLog } from "@/lib/shift-log";
 import { useShiftEvents, useShifts } from "@/lib/hooks";
+import { ClientOnly } from "@/components/ui/ClientOnly";
+import { formatNumber } from "@/lib/locale";
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -141,7 +143,7 @@ function ShiftsPage() {
           {activeShift ? (
             <>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <StatCard label="Produced" value={activeShift.produced.toLocaleString()} hint={`Target ${activeShift.target.toLocaleString()}`} />
+                <StatCard label="Produced" value={<ClientOnly fallback={<span>{formatNumber(activeShift.produced)}</span>}>{activeShift.produced.toLocaleString()}</ClientOnly>} hint={<ClientOnly fallback={<span>{formatNumber(activeShift.target)}</span>}>{activeShift.target.toLocaleString()}</ClientOnly>} />
                 <StatCard label="Achievement" value={`${activeShift.achievement}%`} tone="success" />
                 <StatCard label="Downtime" value={`${activeShift.downtime_minutes} min`} tone="warning" />
                 <StatCard label="Events" value={shiftEvents.data?.length ?? 0} hint={`${activeShift.start}–${activeShift.end}`} />
