@@ -1084,3 +1084,28 @@ const updateRing = () => {
 - The rail's `xl:sticky xl:top-24` is sized to clear the console's sticky header (~80px: `py-4` + h1 + subtitle); if the header grows, revisit the offset.
 - Grid + `overflow-x-auto` children always need `min-w-0` on the track child — classic CSS-grid blowout, caught before runtime by knowing the rule, not by the typechecker.
 - Gates: `tsc` clean, eslint 0 errors (136 indent-drift errors fixed via `--fix`), `vite build` exit 0. DnD handlers, tray, dialogs, and hooks untouched — no API surface changes.
+
+---
+
+## 2026-10-05: Layout board pool scoped to THIS plant; team drop carries the plant (backend spec)
+
+**Requests (user-confirmed via questions):** (1) the Layout board's people pool should only offer users who belong to the current plant (plus tenant users with no plant yet), excluding users assigned to other plants; (2) apply the same scope in `TeamMembersDialog`; (3) write the backend contract as a spec note in `optilog-backend/notes/` rather than patching users from the frontend.
+
+**Shipped (frontend):**
+- `src/lib/hooks.ts`: `DirectoryUser.plant_ids?: string[]` (optional on purpose -- an older backend omitting the field degrades to "show everyone", so the pool never empties) plus exported `inPlantScope(u, plantId)` shared by both call sites: `undefined`/empty `plant_ids` => in scope, else membership check.
+- `src/components/console/LayoutBoard.tsx`: split the old single filter into `activeUsers` (active + not on a team) then `poolUsers = activeUsers.filter(u => inPlantScope(u, plantId))` -- the `N available` count and the search filter both run off `poolUsers`; empty state now distinguishes "No unassigned people in this plant." (others exist but are scoped out) from "Everyone is assigned to a team."; rail hint gained "Only people in this plant (or with no plant yet) are listed."
+- `src/components/console/TeamMembersDialog.tsx`: `inPlantScope(u, plantId)` added to the `candidates` filter (next to `canBeTeamMember`) -- used by both the Teams and Schedule pickers, so cross-plant add-member is blocked everywhere at once.
+- No frontend write on drop: `useSetTeamMembers` already invalidates `["users","directory"]` (`hooks.ts:674`), so the pool refetches with the new `plant_ids` once the backend ships A1.
+
+**Backend spec note:** `optilog-backend/notes/TEAM_MEMBER_PLANT_SPEC.md` (status: open). Contract -- in `set_team_members` (`app/domain/teams/service.py:197`), after the membership write, `$addToSet: {plant_ids: team_doc["plant_id"]}` for ALL current member oids: add-only, never strips other plants, never touches removed members, idempotent (self-heals pre-existing members), no new endpoint/permission. `team_doc["plant_id"]` is already an ObjectId so no conversion. Frontend degrades cleanly until applied (drop works, plant grant lands later).
+
+**Live verification (backend running on :8000):**
+- `GET /users` DOES return `plant_ids` for every item (login as `tenant-admin@optilog.com`, endpoint prefix is `/api/v1` -- a bare `/auth/login` 404s).
+- Directory of that tenant: 26 users, 23 plantless (in scope), 3 with plants -- `pm-1`/`tenant-admin` share the logged-in plant (shown), `pm-2` is on a different plant (excluded), proving the filter discriminates.
+
+**Gotchas:**
+- System admin's `GET /users` directory returns `total=0`: `list_users` filters `tenant_id: None` and the bootstrap admin has `tenant_id: null` -- pre-existing, unaffected by this change.
+- Dev-smoke parsing: Vite's ready line wraps the port in ANSI escapes (`localhost:<bold>8081`), so regexes like `localhost:(\d+)` fail -- use `localhost:\D*(\d+)` or read the raw line.
+- `hooks.ts` still reports 5 pre-existing lint errors (`api.get<any>` x3 at 612/646/935, prettier drift at 713/978) -- all outside the two hunks this task touched; `LayoutBoard.tsx`/`TeamMembersDialog.tsx` are prettier + eslint clean.
+- Cross-plant drag-ins from the board are now impossible by design (accepted consequence); such a user must be moved by an admin first.
+- Gates: `tsc` clean, `vite build` exit 0, eslint/prettier clean on touched components, live smoke `/`, `/console`, `/console/layout` all 200 on the dev server (port 8081; 8080 was occupied by a stale dev process, now killed).

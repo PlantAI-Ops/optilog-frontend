@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { canBeTeamMember, useShiftLog, hasMinRole } from "@/lib/shift-log";
 import {
+  inPlantScope,
   usePlantTeamsDetail,
   useUserDirectory,
   useSetTeamMembers,
@@ -60,6 +61,9 @@ export function TeamMembersDialog({ team, open, onOpenChange }: TeamMembersDialo
       // Plant managers+ never belong to a crew.
       canBeTeamMember(u.role) &&
       !memberIds.includes(u.id) &&
+      // Same scope as the Layout board: this plant's people plus tenant
+      // users who have no plant yet.
+      inPlantScope(u, plantId) &&
       (search.trim() === "" ||
         u.name.toLowerCase().includes(search.trim().toLowerCase()) ||
         u.email.toLowerCase().includes(search.trim().toLowerCase())),
