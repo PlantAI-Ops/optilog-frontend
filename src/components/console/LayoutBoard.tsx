@@ -221,6 +221,19 @@ function TeamCard({
     : coversAll
       ? "All lines"
       : `${lineById.get(coverage[0] ?? "") ?? "Line"}${coverage.length > 1 ? ` +${coverage.length - 1}` : ""}`;
+  /* Areas this team covers, derived from its lines (team → line → area). */
+  const areaNameOfLine = new Map(
+    groups.flatMap((g) => g.lines.map((l) => [l.id, g.area.name] as [string, string])),
+  );
+  const areaNames = [
+    ...new Set(coverage.map((id) => areaNameOfLine.get(id)).filter((n): n is string => !!n)),
+  ];
+  const areaLabel =
+    !placed || areaNames.length === 0
+      ? ""
+      : areaNames.length === 1
+        ? areaNames[0]
+        : `${areaNames[0]} +${areaNames.length - 1}`;
   const shiftLabel = shiftTypeLabel(team.shift_config);
 
   return (
@@ -241,16 +254,26 @@ function TeamCard({
           <GripVertical className="size-3.5 shrink-0 text-muted-foreground" />
           <h3 className="truncate text-sm font-semibold">{team.name}</h3>
         </div>
-        <span
-          className={cn(
-            "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium",
-            placed
-              ? "border-primary/40 bg-primary/10 text-primary"
-              : "border-border bg-secondary text-muted-foreground",
-          )}
-        >
-          {coverageLabel}
-        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          <span
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-[10px] font-medium",
+              placed
+                ? "border-primary/40 bg-primary/10 text-primary"
+                : "border-border bg-secondary text-muted-foreground",
+            )}
+          >
+            {coverageLabel}
+          </span>
+          {areaLabel ? (
+            <span
+              title={areaNames.join(", ")}
+              className="max-w-24 truncate rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+            >
+              {areaLabel}
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <p className="mt-1 truncate text-xs text-muted-foreground">

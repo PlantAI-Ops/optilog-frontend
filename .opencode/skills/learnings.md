@@ -1109,3 +1109,27 @@ const updateRing = () => {
 - `hooks.ts` still reports 5 pre-existing lint errors (`api.get<any>` x3 at 612/646/935, prettier drift at 713/978) -- all outside the two hunks this task touched; `LayoutBoard.tsx`/`TeamMembersDialog.tsx` are prettier + eslint clean.
 - Cross-plant drag-ins from the board are now impossible by design (accepted consequence); such a user must be moved by an admin first.
 - Gates: `tsc` clean, `vite build` exit 0, eslint/prettier clean on touched components, live smoke `/`, `/console`, `/console/layout` all 200 on the dev server (port 8081; 8080 was occupied by a stale dev process, now killed).
+
+---
+
+## 2026-10-05: Operator start screen — Area -> Line pick, persisted with shift + events
+
+**Requests (user-confirmed via questions):** (1) the mobile start screen gets an explicit **area selector** — options = the blueprint-created plant areas (NOT team-restricted), presented as **Area select -> cascading Line select**; (2) the pick must be **persisted server-side** (shift + events), not just local state; (3) console: **show each team's covered area(s) on the Layout TeamCard** (editing stays Layout-only); (4) **fix the pre-existing End Shift breakage** in this pass. Defaults come from config (current shift's `line_id`, else the team's `assigned_line_ids` from Layout) but stay adjustable before Start Logging.
+
+**Shipped (frontend):**
+- `src/lib/shift-log.ts`: `ShiftState.areaId`/`.area` (+ `initialState` defaults so old `shiftlog.state.v1` blobs hydrate clean), `ShiftEvent.line_id?`/`.area_id?`, new `startLoggingSession(shiftId, lineId, areaId)` -> `POST /operator-shifts/start` (fire-and-forget: 409 = already active, offline must not block), and the `endShift()` fix — `handover` sent as a **plain string** (the old `{summary, open_items}` object was rejected with 422 by `ShiftEnd.handover: Optional[str]` before the handler ran; `operator_id` dropped) plus a best-effort session start first so there is a session to close.
+- `src/routes/index.tsx` `StartShiftScreen`: single mislabeled line `<select>` ("Production area" whose `optgroup`s were **dead** — plant-level `GET /plants/{id}/lines` omits `area_id`, LAYOUT_SPEC A8) replaced by Area + Line selects driven by `usePlantLinesByArea`; `canStart` = shift loaded + structure loaded + (no areas configured OR area chosen AND (area has no lines OR line chosen)); prefill effect guarded by a `useRef` so the config hint never snaps back over an operator's cleared choice; changing area clears a line that isn't in it; carryover block now gates on the area; `groups` wrapped in `useMemo` (else `exhaustive-deps` warns the `?? []` literal changes identity every render). `commit()` — the single choke point for voice/manual/edit/confirm saves — stamps `line_id`/`area_id` from state onto every event.
+- `src/components/console/LayoutBoard.tsx` `TeamCard`: deduped covered-area names derived from `assigned_line_ids -> line.area_id` rendered as a secondary chip next to the coverage pill (`Zone A` / `Zone A +2`, full list in `title`).
+
+**Shipped (backend, spec `optilog-backend/notes/AREA_LINE_LOGGING_SPEC.md`):**
+- `ShiftEventCreate` += `line_id?`, `area_id?`; `create_event` stores both as Oids; events `FK_FIELDS` += both (timeline/list serialize them); `escalate_event` prefers the stamped line over asset lookup.
+- `OperatorShiftStart` += `line_id?`, `area_id?`; `start_operator_session` stores them; its `FK_FIELDS` += both. Endpoint stays `require_role("operator")` (mobile-capable).
+- Read side needed **no** dashboard change: my-events/events list already prefer `e.get("line_id")` over the asset-derived one.
+
+**Gotchas:**
+- Events previously had **zero** line linkage from mobile: the client posts `asset` (name string) while `ShiftEventCreate` expects `asset_name`, so it was silently dropped — the stamped `line_id` is the first real binding. Watch for other silently-dropped fields (`duration_minutes` vs `duration_seconds` is a pre-existing mismatch).
+- `POST /operator-shifts/start` existed since forever but **no frontend code ever called it** — that's why `POST /shifts/{id}/end` 404'd (no session to close). Second start still 409s by design; the frontend swallows it.
+- Verify a pydantic mismatch cheaply before trusting it: `python -c "from app.schemas... import X; X(field={'a':1})"` (pydantic 2.13 rejects dict-for-str -> FastAPI 422 pre-handler).
+- Live smoke against the running `--reload` uvicorn worked end-to-end (session ids round-trip, timeline returns event ids, end 200) and the test event was deleted afterwards; a closed session doc + `operator_ids` entry remain on shift `6ac29658f547e57f92febbd0` (noted in the spec).
+- `npm run dev` port regex failed again even with `\D*` (cmd-redirected log encoding) — just read `devlog.txt` raw for the port; 8080 was busy again, server took 8081.
+- Gates: `tsc` clean, eslint/prettier clean on touched files (index.tsx keeps its 4 pre-existing SpeechRecognition `any`s), `vite build` exit 0, backend `pytest tests -q` = **235 passed** (4 new in `tests/api/test_area_line_logging.py`), dev smoke `/` + `/console/layout` 200.

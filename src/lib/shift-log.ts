@@ -90,6 +90,9 @@ export interface ShiftEvent {
   sync: SyncState;
   logged_by: string;
   recording_id?: string;
+  /** Plant line/area the operator selected before logging (persisted server-side). */
+  line_id?: string | null;
+  area_id?: string | null;
 }
 
 export interface User {
@@ -125,6 +128,9 @@ export interface ShiftState {
   shiftType: string | null;
   lineId: string | null;
   line: string;
+  /** Area picked on the start screen (adjustable before Start Logging). */
+  areaId: string | null;
+  area: string;
   /** Team the confirmed shift belongs to (set when logging starts). */
   teamId?: string | null;
   teamName?: string | null;
@@ -184,6 +190,8 @@ const initialState: ShiftState = {
   shiftType: null,
   lineId: null,
   line: "Packaging Line 2",
+  areaId: null,
+  area: "",
   startedAt: null,
   endedAt: null,
   handover: "",
@@ -381,22 +389,40 @@ export async function startShift(): Promise<void> {
   }
 }
 
+/**
+ * Record the operator's chosen line/area for this shift on the backend
+ * (`POST /operator-shifts/start`). Non-blocking by design: a 409 means the
+ * session is already active and an offline device simply logs locally —
+ * neither should stop the operator from starting.
+ */
+export async function startLoggingSession(
+  shiftId: string | null,
+  lineId: string | null,
+  areaId: string | null,
+): Promise<void> {
+  if (!shiftId) return;
+  try {
+    await api.post("/operator-shifts/start", {
+      shift_id: shiftId,
+      line_id: lineId || null,
+      area_id: areaId || null,
+    });
+  } catch {
+    /* session already active / offline / backend older than this feature */
+  }
+}
+
 export async function endShift(handover: string): Promise<void> {
   if (!state.shiftId) return;
   setState({ loading: true, error: null });
   try {
+    // Make sure an operator session exists to close (operators who were already
+    // mid-shift when this shipped never called start; errors are swallowed).
+    await startLoggingSession(state.shiftId, state.lineId, state.areaId);
     await api.post(`/shifts/${state.shiftId}/end`, {
-      operator_id: state.user?.id,
-      handover: {
-        summary: handover || "Shift completed",
-        open_items: state.events
-          .filter((e) => e.status !== "resolved")
-          .map((e) => ({
-            description: e.observation || e.event_type,
-            severity: e.event_type === "breakdown" ? "high" : "medium",
-            assigned_to: "next_shift",
-          })),
-      },
+      // Backend `ShiftEnd.handover` is a plain string — the old object payload
+      // was rejected with 422 before the handler ever ran.
+      handover: handover || "Shift completed",
     });
     setState({
       shiftActive: false,

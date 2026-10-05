@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
 
 interface SpeechRecognitionStatic {
@@ -55,8 +55,7 @@ import { EventEditor } from "@/components/shift/EventEditor";
 import {
   useCurrentShift,
   useCarriedOver,
-  useAreas,
-  useLines,
+  usePlantLinesByArea,
   usePlantTeamsDetail,
   transcribeAudio,
 } from "@/lib/hooks";
@@ -68,6 +67,7 @@ import {
   canLogShift,
   login,
   setState,
+  startLoggingSession,
   type EventStatus,
   unresolvedCount,
   useShiftLog,
@@ -179,8 +179,7 @@ function StartShiftScreen() {
 
   const currentShift = useCurrentShift(plantId);
   const shift = currentShift.data?.current_shift;
-  const lines = currentShift.data?.lines ?? [];
-
+  const [selectedAreaId, setSelectedAreaId] = useState<string>("");
   const [selectedLineId, setSelectedLineId] = useState<string>("");
 
   const carriedOver = useCarriedOver(plantId, shift?.shift_type, today);
@@ -196,42 +195,61 @@ function StartShiftScreen() {
     : undefined;
   const teamMismatch = !!myTeam && !!shift?.team_id && shift.team_id !== myTeam.id;
 
-  /* Group selectable lines under their areas (falls back to a flat list). */
-  const areas = useAreas(plantId);
-  const allLines = useLines(plantId);
-  const areaNameById = new Map((areas.data ?? []).map((a) => [a.id, a.name]));
-  const lineAreaById = new Map((allLines.data ?? []).map((l) => [l.id, l.area_id]));
-  const groupedLines = (() => {
-    const byArea = new Map<string, typeof lines>();
-    for (const l of lines) {
-      const areaId = lineAreaById.get(l.id);
-      const key = (areaId && areaNameById.get(areaId)) || "";
-      const bucket = byArea.get(key);
-      if (bucket) bucket.push(l);
-      else byArea.set(key, [l]);
-    }
-    return [...byArea.entries()];
-  })();
-  const useAreaGroups = groupedLines.some(([areaName]) => !!areaName);
+  /* Blueprint structure: areas with their lines (area_id intact — the
+     plant-level lines endpoint strips it, see LAYOUT_SPEC A8). */
+  const structure = usePlantLinesByArea(plantId);
+  const groups = useMemo(() => structure.data ?? [], [structure.data]);
+  const hasNoAreas = groups.length === 0;
 
-  const selectedLine = lines.find((l) => l.id === selectedLineId);
+  /* Default comes from config (the shift's own line, else the team's first
+     covered line from the Layout tab) — the operator can still change it. */
+  const prefilled = useRef(false);
+  useEffect(() => {
+    if (prefilled.current || selectedAreaId) return;
+    const hint = shift?.line_id || myTeam?.assigned_line_ids?.[0];
+    if (!hint) return;
+    const group = groups.find((g) => g.lines.some((l) => l.id === hint));
+    if (!group) return;
+    prefilled.current = true;
+    setSelectedAreaId(group.area.id);
+    setSelectedLineId(hint);
+  }, [groups, shift?.line_id, myTeam, selectedAreaId]);
 
-  // Pending (unscheduled) shifts can come back with no lines — still allow logging.
-  const canStart = !!shift && (lines.length === 0 || !!selectedLineId);
+  const selectedGroup = groups.find((g) => g.area.id === selectedAreaId);
+  const selectedLine = selectedGroup?.lines.find((l) => l.id === selectedLineId);
+  const areaHasLines = !!selectedGroup && selectedGroup.lines.length > 0;
+
+  // Pending (unscheduled) shifts can come back with no structure — still allow logging.
+  const canStart =
+    !!shift &&
+    !structure.isLoading &&
+    (hasNoAreas || (!!selectedAreaId && (!areaHasLines || !!selectedLineId)));
+
+  const handleAreaChange = (areaId: string) => {
+    setSelectedAreaId(areaId);
+    const group = groups.find((g) => g.area.id === areaId);
+    if (!group?.lines.some((l) => l.id === selectedLineId)) setSelectedLineId("");
+  };
 
   const handleStart = () => {
     if (!canStart || !shift) return;
+    const lineId = selectedLineId || shift.line_id || null;
+    const areaId = selectedAreaId || null;
     setState({
       shiftActive: true,
       shiftId: shift.shift_id,
       shiftName: shift.name,
       shiftType: shift.shift_type,
-      lineId: selectedLineId || shift.line_id,
+      lineId,
       line: selectedLine?.name || shift.line_name || "Unassigned",
+      areaId,
+      area: selectedGroup?.area.name ?? "",
       teamId: shift.team_id || null,
       teamName: shift.team_name || null,
       carriedOver: issues,
     });
+    // Persist the pick on the operator's session (non-blocking).
+    void startLoggingSession(shift.shift_id, lineId, areaId);
   };
 
   return (
@@ -277,39 +295,64 @@ function StartShiftScreen() {
                 </div>
               ) : null}
 
-              <label className="block">
-                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Production area
-                </span>
-                {lines.length > 0 ? (
-                  <select
-                    value={selectedLineId}
-                    onChange={(e) => setSelectedLineId(e.target.value)}
-                    className="mt-1 h-14 w-full rounded-2xl border border-input bg-secondary px-4 text-lg font-bold outline-none focus:border-ring"
-                  >
-                    <option value="">Select line…</option>
-                    {useAreaGroups
-                      ? groupedLines.map(([areaName, groupLines]) => (
-                          <optgroup key={areaName || "other"} label={areaName || "Other lines"}>
-                            {groupLines.map((l) => (
-                              <option key={l.id} value={l.id}>
-                                {l.name}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))
-                      : lines.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.name}
-                          </option>
-                        ))}
-                  </select>
-                ) : (
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    No production areas configured — you can start logging anyway.
-                  </p>
-                )}
-              </label>
+              {structure.isLoading ? (
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  Loading areas…
+                </div>
+              ) : hasNoAreas ? (
+                <p className="text-sm text-muted-foreground">
+                  No production areas configured — you can start logging anyway.
+                </p>
+              ) : (
+                <>
+                  <label className="block">
+                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Area
+                    </span>
+                    <select
+                      value={selectedAreaId}
+                      onChange={(e) => handleAreaChange(e.target.value)}
+                      className="mt-1 h-14 w-full rounded-2xl border border-input bg-secondary px-4 text-lg font-bold outline-none focus:border-ring"
+                    >
+                      <option value="">Select area…</option>
+                      {groups.map((g) => (
+                        <option key={g.area.id} value={g.area.id}>
+                          {g.area.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {selectedGroup ? (
+                    areaHasLines ? (
+                      <label className="block">
+                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                          Line
+                        </span>
+                        <select
+                          value={selectedLineId}
+                          onChange={(e) => setSelectedLineId(e.target.value)}
+                          className="mt-1 h-14 w-full rounded-2xl border border-input bg-secondary px-4 text-lg font-bold outline-none focus:border-ring"
+                        >
+                          <option value="">Select line…</option>
+                          {selectedGroup.lines.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No lines configured in this area — you can start logging anyway.
+                      </p>
+                    )
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Pick an area to choose a line.</p>
+                  )}
+                </>
+              )}
 
               <div className="flex justify-between pt-1">
                 <dt className="text-muted-foreground">Role</dt>
@@ -332,7 +375,7 @@ function StartShiftScreen() {
             </div>
           ) : null}
 
-          {selectedLineId ? (
+          {selectedAreaId ? (
             carriedOver.isLoading ? null : issues.length > 0 ? (
               <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4">
                 <p className="flex items-center gap-2 text-base font-bold text-warning">
@@ -362,7 +405,7 @@ function StartShiftScreen() {
           disabled={!canStart}
           className="flex h-20 w-full items-center justify-center gap-3 rounded-3xl bg-primary text-2xl font-black text-primary-foreground disabled:opacity-40"
         >
-          {currentShift.isLoading ? "Loading…" : "Start Logging"}
+          {currentShift.isLoading || structure.isLoading ? "Loading…" : "Start Logging"}
         </button>
       </div>
     </AppShell>
@@ -594,7 +637,8 @@ function RecordScreen() {
   };
 
   const commit = async (event: ShiftEvent) => {
-    addEvent(event);
+    // Stamp the area/line picked at start onto every saved event.
+    addEvent({ ...event, line_id: state.lineId, area_id: state.areaId });
     // Save audio recording if user confirmed and audio exists
     if (audioBlob && event.id) {
       try {
