@@ -1,11 +1,25 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { CloudOff, CloudUpload, LogOut, Monitor, Wifi, WifiOff, ChevronLeft } from "lucide-react";
-import { logout, pendingCount, setOnline, useShiftLog } from "@/lib/shift-log";
+import { canLogShift, logout, pendingCount, setOnline, useShiftLog } from "@/lib/shift-log";
 
-export function AppShell({ children, title, onBack }: { children: ReactNode; title?: string; onBack?: () => void }) {
+export function AppShell({
+  children,
+  title,
+  onBack,
+  showSessionActions = true,
+}: {
+  children: ReactNode;
+  title?: string;
+  onBack?: () => void;
+  /** Hide the console (desktop) and sign-out icons — e.g. on the login page. */
+  showSessionActions?: boolean;
+}) {
   const state = useShiftLog();
   const pending = pendingCount(state);
+  // Pending-sync badge and the offline simulator only make sense for the
+  // voice logging flow — shift_manager+ (manager home) never logs.
+  const canLog = canLogShift(state.user?.role);
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col bg-background">
@@ -29,39 +43,45 @@ export function AppShell({ children, title, onBack }: { children: ReactNode; tit
           </Link>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            to="/console"
-            aria-label="Open operations console"
-            className="flex size-11 items-center justify-center rounded-xl border border-border bg-secondary text-secondary-foreground"
-          >
-            <Monitor className="size-5" />
-          </Link>
-          {pending > 0 ? (
+          {showSessionActions ? (
+            <Link
+              to="/console"
+              aria-label="Open operations console"
+              className="flex size-11 items-center justify-center rounded-xl border border-border bg-secondary text-secondary-foreground"
+            >
+              <Monitor className="size-5" />
+            </Link>
+          ) : null}
+          {canLog && pending > 0 ? (
             <span className="flex items-center gap-1 rounded-full bg-warning/20 px-3 py-1.5 text-xs font-bold text-warning">
               {state.online ? <CloudUpload className="size-4" /> : <CloudOff className="size-4" />}
               {pending} pending
             </span>
           ) : null}
-          <button
-            type="button"
-            onClick={() => setOnline(!state.online)}
-            aria-label={state.online ? "Simulate going offline" : "Simulate going online"}
-            className="flex size-11 items-center justify-center rounded-xl border border-border bg-secondary text-secondary-foreground"
-          >
-            {state.online ? (
-              <Wifi className="size-5 text-success" />
-            ) : (
-              <WifiOff className="size-5 text-destructive" />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={logout}
-            aria-label="Sign out"
-            className="flex size-11 items-center justify-center rounded-xl border border-border bg-secondary text-secondary-foreground"
-          >
-            <LogOut className="size-5" />
-          </button>
+          {canLog ? (
+            <button
+              type="button"
+              onClick={() => setOnline(!state.online)}
+              aria-label={state.online ? "Simulate going offline" : "Simulate going online"}
+              className="flex size-11 items-center justify-center rounded-xl border border-border bg-secondary text-secondary-foreground"
+            >
+              {state.online ? (
+                <Wifi className="size-5 text-success" />
+              ) : (
+                <WifiOff className="size-5 text-destructive" />
+              )}
+            </button>
+          ) : null}
+          {showSessionActions ? (
+            <button
+              type="button"
+              onClick={logout}
+              aria-label="Sign out"
+              className="flex size-11 items-center justify-center rounded-xl border border-border bg-secondary text-secondary-foreground"
+            >
+              <LogOut className="size-5" />
+            </button>
+          ) : null}
         </div>
       </header>
       <main className="flex flex-1 flex-col px-4 pb-8 pt-4">{children}</main>

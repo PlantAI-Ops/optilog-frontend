@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, CircleCheck, CircleDot, Loader2, Pencil, Play, Wrench } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { EventEditor } from "@/components/shift/EventEditor";
 import { useEventAudio, useMyEvents, usePlanMaintenance } from "@/lib/hooks";
 import {
   STATUS_LABEL,
+  canLogShift,
   formatTime,
   hasMinRole,
   mergeEvents,
@@ -41,6 +42,7 @@ function statusIcon(status: ShiftEvent["status"]) {
 
 function TimelinePage() {
   const state = useShiftLog();
+  const navigate = useNavigate();
   const [openId, setOpenId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [planMaintenanceId, setPlanMaintenanceId] = useState<string | null>(null);
@@ -58,6 +60,13 @@ function TimelinePage() {
       mergeEvents(myEvents.data);
     }
   }, [myEvents.data]);
+
+  // Part of the voice logging flow — shift_manager+ belongs on the manager home.
+  const canLog = canLogShift(state.user?.role);
+  useEffect(() => {
+    if (state.user && !canLog) navigate({ to: "/", replace: true });
+  }, [state.user, canLog, navigate]);
+  if (state.user && !canLog) return null;
 
   const editing = state.events.find((e) => e.id === editId);
   if (editing) {
@@ -138,12 +147,11 @@ function TimelinePage() {
                       <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                         Original transcript
                       </p>
-                      <p className="mt-1 text-base italic leading-snug break-words">"{event.transcript}"</p>
+                      <p className="mt-1 text-base italic leading-snug break-words">
+                        "{event.transcript}"
+                      </p>
                       {event.recording_id ? (
-                        <PlayAudioButton
-                          shiftId={state.shiftId ?? undefined}
-                          eventId={event.id}
-                        />
+                        <PlayAudioButton shiftId={state.shiftId ?? undefined} eventId={event.id} />
                       ) : null}
                     </div>
                   ) : null}
@@ -156,7 +164,9 @@ function TimelinePage() {
                       <Pencil className="size-5" /> Edit event
                     </button>
                   ) : null}
-                  {isSupervisor && event.status !== "resolved" && event.status !== "planned_maintenance" ? (
+                  {isSupervisor &&
+                  event.status !== "resolved" &&
+                  event.status !== "planned_maintenance" ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -308,7 +318,9 @@ function PlanMaintenanceDialog({
 
         <div className="mt-4 space-y-3">
           <div className="rounded-xl bg-secondary/50 p-3">
-            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Issue</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Issue
+            </p>
             <p className="mt-1 text-sm font-medium break-words">
               {event.observation || event.event_type}
             </p>

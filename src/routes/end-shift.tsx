@@ -1,8 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Loader2, Mic, Wrench } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
-import { endShift, hasMinRole, unresolvedCount, useShiftLog, updateEvent } from "@/lib/shift-log";
+import {
+  canLogShift,
+  endShift,
+  hasMinRole,
+  unresolvedCount,
+  useShiftLog,
+  updateEvent,
+} from "@/lib/shift-log";
 import { usePlanMaintenance } from "@/lib/hooks";
 
 export const Route = createFileRoute("/end-shift")({
@@ -29,11 +36,20 @@ function EndShiftPage() {
   const navigate = useNavigate();
   const [note, setNote] = useState(state.handover);
   const [selectedForMaintenance, setSelectedForMaintenance] = useState<Set<string>>(new Set());
-  const [maintenanceDate, setMaintenanceDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [maintenanceDate, setMaintenanceDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
   const unresolved = unresolvedCount(state);
   const resolved = state.events.filter((e) => e.status === "resolved").length;
   const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
   const planMaintenance = usePlanMaintenance();
+
+  // Part of the voice logging flow — shift_manager+ belongs on the manager home.
+  const canLog = canLogShift(state.user?.role);
+  useEffect(() => {
+    if (state.user && !canLog) navigate({ to: "/", replace: true });
+  }, [state.user, canLog, navigate]);
+  if (state.user && !canLog) return null;
 
   const unresolvedEvents = state.events.filter(
     (e) => e.status !== "resolved" && e.status !== "planned_maintenance",
@@ -163,7 +179,8 @@ function EndShiftPage() {
                   />
                 </label>
                 <p className="mt-5 text-xs text-muted-foreground">
-                  {selectedForMaintenance.size} issue{selectedForMaintenance.size !== 1 ? "s" : ""} selected
+                  {selectedForMaintenance.size} issue{selectedForMaintenance.size !== 1 ? "s" : ""}{" "}
+                  selected
                 </p>
               </div>
             )}

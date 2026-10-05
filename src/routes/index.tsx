@@ -1,13 +1,71 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, createFileRoute } from "@tanstack/react-router";
+
+interface SpeechRecognitionStatic {
+  new (): SpeechRecognition;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  serviceURI: string;
+  grammars: SpeechGrammarList;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+  onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  readonly resultIndex: number;
+  readonly results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  readonly error: string;
+  readonly message: string;
+}
+
+interface SpeechGrammarList {
+  readonly length: number;
+  item(index: number): SpeechGrammar;
+  addFromURI(src: string, weight?: number): void;
+  addFromString(string: string, weight?: number): void;
+}
+
+interface SpeechGrammar {
+  src: string;
+  weight: number;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition: SpeechRecognitionStatic;
+    webkitSpeechRecognition: SpeechRecognitionStatic;
+  }
+}
 import { AlertTriangle, Check, Loader2, Mic, Pencil, Plus, Square } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { EventEditor } from "@/components/shift/EventEditor";
-import { useCurrentShift, useCarriedOver, transcribeAudio } from "@/lib/hooks";
+import {
+  useCurrentShift,
+  useCarriedOver,
+  useAreas,
+  useLines,
+  usePlantTeamsDetail,
+  transcribeAudio,
+} from "@/lib/hooks";
 import { postFormData } from "@/lib/api";
+import { formatTime } from "@/lib/locale";
 import {
   addEvent,
   blankEvent,
+  canLogShift,
   login,
   setState,
   type EventStatus,
@@ -15,6 +73,7 @@ import {
   useShiftLog,
   type ShiftEvent,
 } from "@/lib/shift-log";
+import { ManagerHome } from "@/components/shift/ManagerHome";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -38,6 +97,8 @@ export const Route = createFileRoute("/")({
 function Index() {
   const state = useShiftLog();
   if (!state.user) return <LoginScreen />;
+  // Voice logging ends at supervisor — shift_manager+ gets the manager home.
+  if (!canLogShift(state.user.role)) return <ManagerHome />;
   if (!state.shiftActive) return <StartShiftScreen />;
   return <RecordScreen />;
 }
@@ -47,7 +108,7 @@ function Index() {
 function LoginScreen() {
   const state = useShiftLog();
   const [email, setEmail] = useState("admin@optilog.com");
-  const [password, setPassword] = useState("demo1234");
+  const [password, setPassword] = useState("admin123456");
 
   const handleSubmit = async () => {
     try {
@@ -58,14 +119,12 @@ function LoginScreen() {
   };
 
   return (
-    <AppShell>
+    <AppShell showSessionActions={false}>
       <div className="flex flex-1 flex-col justify-center gap-6 py-8">
         <div className="flex flex-col items-center text-center">
           <img src="/optilog-logo.svg" alt="OptiLog" className="mb-4 h-20 w-20" />
           <h1 className="text-3xl font-black tracking-tight">OptiLog</h1>
-          <p className="mt-1 text-base text-muted-foreground">
-            Sign in to continue
-          </p>
+          <p className="mt-1 text-base text-muted-foreground">Sign in to continue</p>
         </div>
         {state.error ? (
           <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive break-words">
@@ -127,19 +186,50 @@ function StartShiftScreen() {
   const carriedOver = useCarriedOver(plantId, shift?.shift_type, today);
   const issues = carriedOver.data?.issues ?? [];
 
+  /* Which team is the operator assigned to — for confirm-before-log. */
+  const teamsDetail = usePlantTeamsDetail(plantId);
+  const userId = state.user?.id;
+  const myTeam = userId
+    ? (teamsDetail.data ?? []).find(
+        (t) => t.member_ids?.includes(userId) || t.members?.some((m) => m.id === userId),
+      )
+    : undefined;
+  const teamMismatch = !!myTeam && !!shift?.team_id && shift.team_id !== myTeam.id;
+
+  /* Group selectable lines under their areas (falls back to a flat list). */
+  const areas = useAreas(plantId);
+  const allLines = useLines(plantId);
+  const areaNameById = new Map((areas.data ?? []).map((a) => [a.id, a.name]));
+  const lineAreaById = new Map((allLines.data ?? []).map((l) => [l.id, l.area_id]));
+  const groupedLines = (() => {
+    const byArea = new Map<string, typeof lines>();
+    for (const l of lines) {
+      const areaId = lineAreaById.get(l.id);
+      const key = (areaId && areaNameById.get(areaId)) || "";
+      const bucket = byArea.get(key);
+      if (bucket) bucket.push(l);
+      else byArea.set(key, [l]);
+    }
+    return [...byArea.entries()];
+  })();
+  const useAreaGroups = groupedLines.some(([areaName]) => !!areaName);
+
   const selectedLine = lines.find((l) => l.id === selectedLineId);
 
-  const canStart = !!shift && !!selectedLineId;
+  // Pending (unscheduled) shifts can come back with no lines — still allow logging.
+  const canStart = !!shift && (lines.length === 0 || !!selectedLineId);
 
   const handleStart = () => {
-    if (!canStart) return;
+    if (!canStart || !shift) return;
     setState({
       shiftActive: true,
       shiftId: shift.shift_id,
       shiftName: shift.name,
       shiftType: shift.shift_type,
-      lineId: selectedLineId,
-      line: selectedLine?.name ?? "Line",
+      lineId: selectedLineId || shift.line_id,
+      line: selectedLine?.name || shift.line_name || "Unassigned",
+      teamId: shift.team_id || null,
+      teamName: shift.team_name || null,
       carriedOver: issues,
     });
   };
@@ -170,8 +260,22 @@ function StartShiftScreen() {
               </div>
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">Team</dt>
-                <dd className="font-bold">{shift.team_name || "—"}</dd>
+                <dd className="text-right font-bold">
+                  {shift.team_name || "—"}
+                  {myTeam && shift.team_id === myTeam.id ? (
+                    <span className="ml-2 inline-flex items-center rounded-full border border-success/40 bg-success/10 px-2 py-0.5 align-middle text-xs font-medium text-success">
+                      Your team
+                    </span>
+                  ) : null}
+                </dd>
               </div>
+
+              {teamMismatch ? (
+                <div className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm font-medium text-warning">
+                  This shift is assigned to {shift.team_name}, but you're on {myTeam?.name}. Confirm
+                  it's the right team before logging.
+                </div>
+              ) : null}
 
               <label className="block">
                 <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -184,15 +288,25 @@ function StartShiftScreen() {
                     className="mt-1 h-14 w-full rounded-2xl border border-input bg-secondary px-4 text-lg font-bold outline-none focus:border-ring"
                   >
                     <option value="">Select line…</option>
-                    {lines.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}
-                      </option>
-                    ))}
+                    {useAreaGroups
+                      ? groupedLines.map(([areaName, groupLines]) => (
+                          <optgroup key={areaName || "other"} label={areaName || "Other lines"}>
+                            {groupLines.map((l) => (
+                              <option key={l.id} value={l.id}>
+                                {l.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))
+                      : lines.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.name}
+                          </option>
+                        ))}
                   </select>
                 ) : (
                   <p className="mt-2 text-sm text-muted-foreground">
-                    No production areas configured for your plant.
+                    No production areas configured — you can start logging anyway.
                   </p>
                 )}
               </label>
@@ -248,7 +362,7 @@ function StartShiftScreen() {
           disabled={!canStart}
           className="flex h-20 w-full items-center justify-center gap-3 rounded-3xl bg-primary text-2xl font-black text-primary-foreground disabled:opacity-40"
         >
-          Start Logging
+          {currentShift.isLoading ? "Loading…" : "Start Logging"}
         </button>
       </div>
     </AppShell>
@@ -300,7 +414,9 @@ function RecordScreen() {
   }, [phase]);
 
   const startAudioAnalyser = (stream: MediaStream) => {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new AudioCtx();
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 64;
@@ -325,8 +441,7 @@ function RecordScreen() {
         const maxSpread = 35;
         const spread = baseSpread + level * maxSpread;
         const opacity = 0.2 + level * 0.6;
-        buttonRef.current.style.boxShadow =
-          `0 0 ${spread}px rgba(239, 68, 68, ${opacity})`;
+        buttonRef.current.style.boxShadow = `0 0 ${spread}px rgba(239, 68, 68, ${opacity})`;
       }
       rafIdRef.current = requestAnimationFrame(updateRing);
     };
@@ -364,8 +479,7 @@ function RecordScreen() {
       };
       mediaRecorder.onstop = () => {
         const chunks = audioChunksRef.current;
-        const blob =
-          chunks.length > 0 ? new Blob(chunks, { type: mediaRecorder.mimeType }) : null;
+        const blob = chunks.length > 0 ? new Blob(chunks, { type: mediaRecorder.mimeType }) : null;
 
         const browserTranscript = finalTranscriptRef.current || liveTranscript;
 
@@ -420,7 +534,8 @@ function RecordScreen() {
       console.error("Microphone access failed:", err);
       setMicBlocked(true);
       setState({
-        error: "Microphone access denied. Allow mic access in your browser settings, then try again.",
+        error:
+          "Microphone access denied. Allow mic access in your browser settings, then try again.",
       });
       return;
     }
@@ -437,15 +552,12 @@ function RecordScreen() {
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const text = event.results[i]![0]!.transcript;
           if (event.results[i]!.isFinal) {
-            finalTranscriptRef.current +=
-              (finalTranscriptRef.current ? " " : "") + text;
+            finalTranscriptRef.current += (finalTranscriptRef.current ? " " : "") + text;
           } else {
             interim += text;
           }
         }
-        setLiveTranscript(
-          finalTranscriptRef.current + (interim ? " " + interim : ""),
-        );
+        setLiveTranscript(finalTranscriptRef.current + (interim ? " " + interim : ""));
       };
       recognition.onerror = () => {
         // Speech recognition error — silently continue
@@ -589,7 +701,7 @@ function RecordScreen() {
             </p>
             <CardLine
               label="Time"
-              value={new Date(draft.timestamp).toLocaleTimeString([], {
+              value={formatTime(draft.timestamp, {
                 hour: "2-digit",
                 minute: "2-digit",
                 hour12: false,
@@ -612,15 +724,15 @@ function RecordScreen() {
             {draft.action_taken ? (
               <CardLine label="Action taken" value={draft.action_taken} />
             ) : null}
-            {draft.severity ? (
-              <CardLine label="Severity" value={draft.severity} />
-            ) : null}
+            {draft.severity ? <CardLine label="Severity" value={draft.severity} /> : null}
             {draft.transcript ? (
               <div className="max-h-48 overflow-y-auto rounded-xl bg-secondary p-3">
                 <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Transcript
                 </p>
-                <p className="mt-1 text-base italic leading-snug break-words">"{draft.transcript}"</p>
+                <p className="mt-1 text-base italic leading-snug break-words">
+                  "{draft.transcript}"
+                </p>
               </div>
             ) : null}
           </div>
@@ -659,7 +771,8 @@ function RecordScreen() {
         {micBlocked ? (
           <div className="w-full rounded-2xl border border-warning/40 bg-warning/10 p-4">
             <p className="text-base font-medium text-warning break-words">
-              Microphone not available. Use Manual entry below to log events, or allow mic access and refresh.
+              Microphone not available. Use Manual entry below to log events, or allow mic access
+              and refresh.
             </p>
           </div>
         ) : null}

@@ -8,10 +8,12 @@ export function getToken(): string | null {
 }
 
 export function setToken(token: string) {
+  if (typeof window === "undefined") return;
   localStorage.setItem(TOKEN_KEY, token);
 }
 
 export function clearToken() {
+  if (typeof window === "undefined") return;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
@@ -22,6 +24,7 @@ export function getRefreshToken(): string | null {
 }
 
 export function setRefreshToken(token: string) {
+  if (typeof window === "undefined") return;
   localStorage.setItem(REFRESH_TOKEN_KEY, token);
 }
 
@@ -70,10 +73,24 @@ async function apiFetch<T = unknown>(method: string, path: string, body?: unknow
         window.location.replace("/");
       }
     }
+    const rec = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+    const detail = rec?.["detail"];
+    // FastAPI 422 returns an array of {loc, msg} objects; surface the first message.
+    const detailMsg = Array.isArray(detail)
+      ? (() => {
+          const first: unknown = detail[0];
+          return first && typeof first === "object" && "msg" in first
+            ? String((first as Record<string, unknown>)["msg"])
+            : null;
+        })()
+      : typeof detail === "string"
+        ? detail
+        : null;
     const message =
-      (data && typeof data === "object" && "message" in data
-        ? (data as { message: string }).message
-        : null) ?? statusMessage(res.status);
+      (typeof rec?.["message"] === "string" ? (rec["message"] as string) : null) ??
+      detailMsg ??
+      (typeof rec?.["error"] === "string" ? (rec["error"] as string) : null) ??
+      statusMessage(res.status);
     throw new ApiError(message, res.status);
   }
 
@@ -114,10 +131,24 @@ export async function postFormData<T = unknown>(path: string, formData: FormData
         window.location.replace("/");
       }
     }
+    const rec = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+    const detail = rec?.["detail"];
+    // FastAPI 422 returns an array of {loc, msg} objects; surface the first message.
+    const detailMsg = Array.isArray(detail)
+      ? (() => {
+          const first: unknown = detail[0];
+          return first && typeof first === "object" && "msg" in first
+            ? String((first as Record<string, unknown>)["msg"])
+            : null;
+        })()
+      : typeof detail === "string"
+        ? detail
+        : null;
     const message =
-      (data && typeof data === "object" && "message" in data
-        ? (data as { message: string }).message
-        : null) ?? statusMessage(res.status);
+      (typeof rec?.["message"] === "string" ? (rec["message"] as string) : null) ??
+      detailMsg ??
+      (typeof rec?.["error"] === "string" ? (rec["error"] as string) : null) ??
+      statusMessage(res.status);
     throw new ApiError(message, res.status);
   }
 
