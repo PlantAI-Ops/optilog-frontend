@@ -3,8 +3,8 @@ import { Link } from "@tanstack/react-router";
 import {
   Activity,
   CalendarClock,
-  CalendarDays,
   CalendarRange,
+  ClipboardCheck,
   Database,
   Gauge,
   LogOut,
@@ -18,14 +18,31 @@ import {
   LayoutDashboard,
   LayoutGrid,
 } from "lucide-react";
-import { usePlant, useShiftsNow } from "@/lib/hooks";
+import { usePlant, useReportApprovals, useShiftsNow, useLessonsToReview } from "@/lib/hooks";
 import { formatWindow, shiftLabel } from "@/lib/shift-now";
 import { canLogShift, logoutHard, hasMinRole, useShiftLog } from "@/lib/shift-log";
 
-const NAV = [
+interface NavItem {
+  to: string;
+  label: string;
+  icon: typeof Gauge;
+  exact?: boolean | undefined;
+  /** Hidden unless the signed-in user is at least this role. */
+  minRole?: "supervisor" | "plant_manager";
+  /** Small count badge (pending approvals). */
+  badge?: number;
+}
+
+const NAV: NavItem[] = [
   { to: "/console", label: "Dashboard", icon: Gauge, exact: true },
   { to: "/console/shifts", label: "Shifts", icon: CalendarClock, exact: false },
-  { to: "/console/calendar", label: "Calendar", icon: CalendarDays, exact: false },
+  {
+    to: "/console/approvals",
+    label: "Approvals",
+    icon: ClipboardCheck,
+    exact: false,
+    minRole: "supervisor",
+  },
   { to: "/console/schedule", label: "Schedule", icon: CalendarRange, exact: false },
   { to: "/console/maintenance", label: "Maintenance", icon: Wrench, exact: false },
   { to: "/console/teams", label: "Teams", icon: Users, exact: false },
@@ -34,7 +51,7 @@ const NAV = [
   { to: "/console/rca", label: "RCA", icon: Search, exact: false },
   { to: "/console/integrations", label: "Connect", icon: Plug, exact: false },
   { to: "/console/data", label: "Data model", icon: Database, exact: false },
-] as const;
+];
 
 const ADMIN_NAV = { to: "/console/admin", label: "Admin", icon: Shield, exact: true } as const;
 
@@ -58,6 +75,20 @@ export function ConsoleShell({
 }) {
   const user = useShiftLog().user;
   const plantId = user?.plant_ids?.[0];
+  // Approvals queue: only supervisors see it, and only they poll it.
+  const isSupervisor = !!user && hasMinRole(user.role, "supervisor");
+  const reportApprovals = useReportApprovals(plantId, isSupervisor);
+  const pendingReports = (reportApprovals.data ?? []).filter((r) => !r.report_approved_at).length;
+  // Vocabulary lessons awaiting a decision count as approvals too.
+  const lessonsToReview = useLessonsToReview(plantId, isSupervisor);
+  const approvalsBadge = pendingReports + lessonsToReview.total;
+  const navItems: NavItem[] = NAV.filter(
+    (item) => !item.minRole || (user && hasMinRole(user.role, item.minRole)),
+  ).map((item) =>
+    item.to === "/console/approvals" && approvalsBadge > 0
+      ? { ...item, badge: approvalsBadge }
+      : item,
+  );
   // Plant tabs are dead weight for accounts with no plant (system_admin).
   // They are hidden by default; system_admin can re-reveal them via a
   // persisted toggle - revealed tabs still land on the ConsoleGate card.
@@ -95,17 +126,22 @@ export function ConsoleShell({
         </div>
         <nav className="flex flex-1 flex-col gap-1">
           {plantTabsVisible &&
-            NAV.map((item) => (
+            navItems.map((item) => (
               <Link
                 key={item.to}
                 to={item.to}
-                activeOptions={{ exact: item.exact }}
+                activeOptions={{ exact: item.exact ?? false }}
                 activeProps={{ className: "bg-secondary text-foreground" }}
                 inactiveProps={{ className: "text-muted-foreground hover:bg-secondary/60" }}
                 className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
               >
                 <item.icon className="size-4" />
                 {item.label}
+                {item.badge ? (
+                  <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold leading-none text-primary-foreground">
+                    {item.badge}
+                  </span>
+                ) : null}
               </Link>
             ))}
           {!hasPlant && isAdmin ? (
@@ -208,16 +244,21 @@ export function ConsoleShell({
           </div>
           <nav className="mt-3 flex gap-1 overflow-x-auto lg:hidden">
             {plantTabsVisible &&
-              NAV.map((item) => (
+              navItems.map((item) => (
                 <Link
                   key={item.to}
                   to={item.to}
-                  activeOptions={{ exact: item.exact }}
+                  activeOptions={{ exact: item.exact ?? false }}
                   activeProps={{ className: "bg-secondary text-foreground" }}
                   inactiveProps={{ className: "text-muted-foreground" }}
                   className="whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium"
                 >
                   {item.label}
+                  {item.badge ? (
+                    <span className="ml-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold leading-none text-primary-foreground">
+                      {item.badge}
+                    </span>
+                  ) : null}
                 </Link>
               ))}
             {!hasPlant && isAdmin ? (
