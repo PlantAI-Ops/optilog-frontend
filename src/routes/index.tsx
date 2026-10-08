@@ -49,25 +49,36 @@ declare global {
     webkitSpeechRecognition: SpeechRecognitionStatic;
   }
 }
-import { AlertTriangle, Check, Loader2, Mic, Pencil, Plus, Square } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Mic, Pencil, Plus, Square, X } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { EventEditor } from "@/components/shift/EventEditor";
+import { useShiftWindow } from "@/hooks/use-shift-window";
 import {
   useCurrentShift,
   useCarriedOver,
   usePlantLinesByArea,
   usePlantTeamsDetail,
+  useShiftsNow,
+  useMyLoggingApproval,
+  usePendingLoggingApprovals,
+  useCreateLoggingApproval,
+  useApproveLoggingApproval,
+  useDenyLoggingApproval,
   transcribeAudio,
+  type CorrectionSuggestion,
 } from "@/lib/hooks";
-import { postFormData } from "@/lib/api";
+import { api, postFormData } from "@/lib/api";
 import { formatTime } from "@/lib/locale";
+import { shiftLabel } from "@/lib/shift-now";
 import {
   addEvent,
   blankEvent,
   canLogShift,
+  hasMinRole,
   login,
   setState,
   startLoggingSession,
+  syncPending,
   type EventStatus,
   unresolvedCount,
   useShiftLog,
@@ -99,7 +110,13 @@ function Index() {
   if (!state.user) return <LoginScreen />;
   // Voice logging ends at supervisor — shift_manager+ gets the manager home.
   if (!canLogShift(state.user.role)) return <ManagerHome />;
-  if (!state.shiftActive) return <StartShiftScreen />;
+  if (!state.shiftActive) {
+    // Just ended this shift: offer the summary instead of a fresh start. A
+    // genuinely new shift window (different shift id) clears the ended state
+    // and returns the operator to the start screen.
+    if (state.endedAt) return <ShiftEndedScreen />;
+    return <StartShiftScreen />;
+  }
   return <RecordScreen />;
 }
 
@@ -107,8 +124,8 @@ function Index() {
 
 function LoginScreen() {
   const state = useShiftLog();
-  const [email, setEmail] = useState("admin@optilog.com");
-  const [password, setPassword] = useState("admin123456");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   const handleSubmit = async () => {
     try {
@@ -179,6 +196,12 @@ function StartShiftScreen() {
 
   const currentShift = useCurrentShift(plantId);
   const shift = currentShift.data?.current_shift;
+  const who = state.user?.name ?? "Operator";
+  /* "{Name}, Afternoon" — driven by the *running* shift, not the clock; only
+     when no window is active do we fall back to a time-of-day greeting. */
+  const headline = shift
+    ? `${who}, ${shiftLabel(shift.shift_type) ?? shift.name}`
+    : `${greeting}, ${who}.`;
   const [selectedAreaId, setSelectedAreaId] = useState<string>("");
   const [selectedLineId, setSelectedLineId] = useState<string>("");
 
@@ -190,10 +213,32 @@ function StartShiftScreen() {
   const userId = state.user?.id;
   const myTeam = userId
     ? (teamsDetail.data ?? []).find(
-        (t) => t.member_ids?.includes(userId) || t.members?.some((m) => m.id === userId),
+        (t) =>
+          t.member_ids?.includes(userId) ||
+          t.members?.some((m) => m.id === userId) ||
+          t.supervisor_id === userId,
       )
     : undefined;
-  const teamMismatch = !!myTeam && !!shift?.team_id && shift.team_id !== myTeam.id;
+
+  /* ---- On-shift gate (ON_SHIFT_GATE_SPEC) ------------------------------
+     Only an explicit `on_shift === false` blocks (a missing field means an
+     older backend — fail open). Supervisors bypass the gate entirely. */
+  const nowShift = useShiftsNow(plantId);
+  const isSupervisor = !!state.user && hasMinRole(state.user.role, "supervisor");
+  const offShift = currentShift.data?.on_shift === false;
+  const blocked = offShift && !isSupervisor;
+  const myApproval = useMyLoggingApproval(plantId, blocked);
+  const approval = myApproval.data ?? null;
+  const approvalOk = approval?.status === "approved";
+  const nextShift = currentShift.data?.next_shift ?? null;
+
+  /* Supervisor inbox: approval requests from the crew. */
+  const pendingRequests = usePendingLoggingApprovals(plantId, isSupervisor);
+  const approveReq = useApproveLoggingApproval(plantId);
+  const denyReq = useDenyLoggingApproval(plantId);
+  const createReq = useCreateLoggingApproval(plantId);
+  const [approvalReason, setApprovalReason] = useState("");
+  const inboxError = approveReq.error ?? denyReq.error;
 
   /* Blueprint structure: areas with their lines (area_id intact — the
      plant-level lines endpoint strips it, see LAYOUT_SPEC A8). */
@@ -219,10 +264,12 @@ function StartShiftScreen() {
   const selectedLine = selectedGroup?.lines.find((l) => l.id === selectedLineId);
   const areaHasLines = !!selectedGroup && selectedGroup.lines.length > 0;
 
-  // Pending (unscheduled) shifts can come back with no structure — still allow logging.
+  // Pending (unscheduled) shifts can come back with no structure — still allow
+  // logging. Off-shift crew additionally need the supervisor approval.
   const canStart =
     !!shift &&
     !structure.isLoading &&
+    (!blocked || approvalOk) &&
     (hasNoAreas || (!!selectedAreaId && (!areaHasLines || !!selectedLineId)));
 
   const handleAreaChange = (areaId: string) => {
@@ -235,6 +282,8 @@ function StartShiftScreen() {
     if (!canStart || !shift) return;
     const lineId = selectedLineId || shift.line_id || null;
     const areaId = selectedAreaId || null;
+    // Flush queued posts/deletes against the *old* shift id before switching.
+    void syncPending();
     setState({
       shiftActive: true,
       shiftId: shift.shift_id,
@@ -247,18 +296,139 @@ function StartShiftScreen() {
       teamId: shift.team_id || null,
       teamName: shift.team_name || null,
       carriedOver: issues,
+      // Fresh shift: previous shift's events/approval state must not leak in.
+      events: [],
+      deletedIds: [],
+      endedAt: null,
+      reportApproved: false,
+      handover: "",
+      error: null,
+      // Plant window end (ISO) — drives the countdown + recording hard stop.
+      windowEnd: nowShift.data?.current_shift?.end ?? null,
     });
-    // Persist the pick on the operator's session (non-blocking).
-    void startLoggingSession(shift.shift_id, lineId, areaId);
+    // Persist the pick on the operator's session (non-blocking). When the
+    // start is unlocked by a supervisor approval, spend it (single-use).
+    void startLoggingSession(
+      shift.shift_id,
+      lineId,
+      areaId,
+      blocked && approvalOk ? approval?.id : null,
+    );
   };
 
   return (
     <AppShell>
       <div className="flex flex-1 flex-col justify-between gap-6 py-4">
         <div className="space-y-6">
-          <h1 className="text-3xl font-black tracking-tight">
-            {greeting}, {state.user?.name}.
-          </h1>
+          <h1 className="text-3xl font-black tracking-tight">{headline}</h1>
+
+          {/* Plant-wide "who is on right now" — always visible so the crew
+              knows the current shift and which team covers it. */}
+          {nowShift.data ? (
+            <div className="flex justify-between gap-3 rounded-2xl border border-border bg-card p-4 text-sm">
+              <span className="text-muted-foreground">Running now</span>
+              {nowShift.data.current_shift ? (
+                <span className="text-right font-bold">
+                  {nowShift.data.current_shift.shift_type.charAt(0).toUpperCase() +
+                    nowShift.data.current_shift.shift_type.slice(1)}{" "}
+                  ({nowShift.data.current_shift.start_hour}–{nowShift.data.current_shift.end_hour})
+                  ·{" "}
+                  {nowShift.data.current_shift.team
+                    ? `${nowShift.data.current_shift.team.name} on shift (${nowShift.data.current_shift.team.member_count})`
+                    : "No team assigned"}
+                </span>
+              ) : (
+                <span className="text-right font-medium">No shift window active</span>
+              )}
+            </div>
+          ) : null}
+
+          {/* Off-shift block card: why logging is locked + the cross-device
+              request/approval flow (ON_SHIFT_GATE_SPEC). */}
+          {blocked ? (
+            <div className="space-y-3 rounded-2xl border border-warning/40 bg-warning/10 p-4">
+              <p className="text-base font-bold text-warning">You're not on shift right now.</p>
+              {!myTeam && teamsDetail.data ? (
+                <p className="text-sm">
+                  You're not on a team yet — ask your supervisor to add you.
+                </p>
+              ) : null}
+              {nextShift ? (
+                <p className="text-sm">
+                  Your team's next shift: {nextShift.name} ({nextShift.start}–{nextShift.end}) on{" "}
+                  {nextShift.date}.
+                </p>
+              ) : null}
+              {nowShift.data?.current_shift?.team ? (
+                <p className="text-sm">
+                  Covering this window: {nowShift.data.current_shift.team.name}.
+                </p>
+              ) : null}
+
+              {approval?.status === "approved" ? (
+                <div className="flex items-center gap-2 rounded-xl border border-success/40 bg-success/10 p-3 text-sm font-medium text-success">
+                  <Check className="size-4 shrink-0" />
+                  Approved by your supervisor — you can start logging.
+                </div>
+              ) : approval?.status === "pending" ? (
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  Waiting for supervisor approval…
+                </div>
+              ) : approval?.status === "denied" ? (
+                <p className="text-sm font-medium text-destructive">
+                  Your supervisor declined the request.
+                </p>
+              ) : approval?.status === "expired" ? (
+                <p className="text-sm font-medium text-destructive">
+                  The request expired — ask again.
+                </p>
+              ) : null}
+
+              {!approvalOk ? (
+                <div className="space-y-2">
+                  <input
+                    value={approvalReason}
+                    onChange={(e) => setApprovalReason(e.target.value)}
+                    placeholder="Reason (optional)"
+                    className="h-12 w-full rounded-xl border border-input bg-secondary px-3 text-sm outline-none focus:border-ring"
+                  />
+                  <button
+                    type="button"
+                    disabled={
+                      createReq.isPending || !state.online || approval?.status === "pending"
+                    }
+                    onClick={() =>
+                      createReq.mutate(approvalReason, {
+                        onSuccess: () => setApprovalReason(""),
+                      })
+                    }
+                    className="h-12 w-full rounded-xl border border-warning/40 bg-card text-sm font-bold text-warning disabled:opacity-50"
+                  >
+                    {createReq.isPending
+                      ? "Sending…"
+                      : approval?.status === "pending"
+                        ? "Request sent"
+                        : approval
+                          ? "Request again"
+                          : "Request supervisor approval"}
+                  </button>
+                  {!state.online ? (
+                    <p className="text-xs text-muted-foreground">
+                      Approval requests need an internet connection.
+                    </p>
+                  ) : null}
+                  {createReq.error ? (
+                    <p className="text-sm font-medium text-destructive break-words">
+                      {createReq.error instanceof Error
+                        ? createReq.error.message
+                        : "Could not send the request."}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           {currentShift.isLoading ? (
             <div className="flex items-center justify-center rounded-2xl border border-border bg-card py-8">
@@ -287,13 +457,6 @@ function StartShiftScreen() {
                   ) : null}
                 </dd>
               </div>
-
-              {teamMismatch ? (
-                <div className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm font-medium text-warning">
-                  This shift is assigned to {shift.team_name}, but you're on {myTeam?.name}. Confirm
-                  it's the right team before logging.
-                </div>
-              ) : null}
 
               {structure.isLoading ? (
                 <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -361,7 +524,54 @@ function StartShiftScreen() {
             </div>
           ) : null}
 
-          {shift?.status === "pending" && (
+          {/* Supervisor inbox: approve/deny crew requests (poll-driven, so an
+              approver's tap unlocks the operator's phone within ~4s). */}
+          {isSupervisor && (pendingRequests.data?.length ?? 0) > 0 ? (
+            <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
+              <p className="text-base font-bold">
+                Approval requests ({pendingRequests.data?.length})
+              </p>
+              {(pendingRequests.data ?? []).map((req) => (
+                <div
+                  key={req.id}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-border p-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold">{req.operator_name || "Operator"}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {Math.max(0, Math.round((Date.now() - Date.parse(req.requested_at)) / 60000))}
+                      m ago{req.reason ? ` — ${req.reason}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      disabled={approveReq.isPending || denyReq.isPending}
+                      onClick={() => approveReq.mutate(req.id)}
+                      className="flex h-10 items-center gap-1 rounded-xl border border-success/40 bg-success/10 px-3 text-sm font-bold text-success disabled:opacity-50"
+                    >
+                      <Check className="size-4" /> Approve
+                    </button>
+                    <button
+                      type="button"
+                      disabled={approveReq.isPending || denyReq.isPending}
+                      onClick={() => denyReq.mutate(req.id)}
+                      className="flex h-10 items-center gap-1 rounded-xl border border-destructive/40 bg-destructive/10 px-3 text-sm font-bold text-destructive disabled:opacity-50"
+                    >
+                      <X className="size-4" /> Deny
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {inboxError ? (
+                <p className="text-sm font-medium text-destructive break-words">
+                  {inboxError instanceof Error ? inboxError.message : "Action failed."}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {shift?.status === "pending" && !blocked && (
             <div className="rounded-2xl border border-info/40 bg-info/10 p-4">
               <p className="text-base font-medium text-info">
                 No scheduled shift today. Events will be logged to a pending shift.
@@ -412,6 +622,148 @@ function StartShiftScreen() {
   );
 }
 
+/* ---------------------------- shift ended ------------------------------ */
+
+/**
+ * Post-end-shift landing: the shift is closed for this operator, so the
+ * summary (not a fresh start) is what they need. Two escapes:
+ *  - a new shift window spun up (different shift id) -> back to start screen;
+ *  - same window still running (ended early)         -> resume logging.
+ */
+function ShiftEndedScreen() {
+  const state = useShiftLog();
+  const plantId = state.user?.plant_ids?.[0];
+  const current = useCurrentShift(plantId);
+  const shiftWindow = useShiftWindow(state.windowEnd);
+  const resolved = state.events.filter((e) => e.status === "resolved").length;
+  const unresolved = unresolvedCount(state);
+  const cur = current.data?.current_shift;
+  const curId = cur?.shift_id ?? null;
+  const sameShift = !!curId && curId === state.shiftId;
+  const canResume = sameShift && !shiftWindow.over;
+
+  // A different shift document is now current: this one is behind us. Clear the
+  // ended flag so Index() renders the start screen for the new window.
+  useEffect(() => {
+    if (curId && curId !== state.shiftId) {
+      setState({ endedAt: null, reportApproved: false, error: null });
+    }
+  }, [curId, state.shiftId]);
+
+  const resume = () => {
+    setState({ shiftActive: true, endedAt: null, reportApproved: false, error: null });
+    void startLoggingSession(state.shiftId, state.lineId, state.areaId);
+  };
+
+  return (
+    <AppShell title="Shift ended">
+      <div className="flex flex-1 flex-col gap-5">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight">Shift handed over</h1>
+          <p className="mt-1 text-base text-muted-foreground">
+            {state.endedAt
+              ? formatTime(state.endedAt, { hour: "2-digit", minute: "2-digit", hour12: false })
+              : ""}
+            {" · "}
+            {state.shiftName || "Shift"} · {state.line || "Unassigned"}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <EndedTile value={state.events.length} label="events" />
+          <EndedTile value={resolved} label="resolved" tone="success" />
+          <EndedTile value={unresolved} label="unresolved" tone="warning" />
+        </div>
+
+        {state.handover ? (
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Your handover note
+            </p>
+            <p className="mt-1 text-base leading-snug break-words">{state.handover}</p>
+          </div>
+        ) : null}
+
+        {state.reportApproved ? (
+          <div className="flex items-center gap-2 rounded-2xl border border-success/40 bg-success/10 p-4 text-base font-medium text-success">
+            <Check className="size-5 shrink-0" /> Shift report approved.
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4 text-base font-medium text-warning">
+            Awaiting supervisor approval of the shift report.
+          </div>
+        )}
+
+        {!sameShift && !shiftWindow.over && current.isSuccess && cur ? (
+          <div className="rounded-2xl border border-info/40 bg-info/10 p-4 text-base font-medium text-info">
+            A new shift window is running — start logging again from the home screen.
+          </div>
+        ) : null}
+
+        {sameShift && !shiftWindow.over ? (
+          <div className="rounded-2xl border border-info/40 bg-info/10 p-4 text-base font-medium text-info">
+            The shift window is still running — you can resume logging.
+            {shiftWindow.minutesLeft !== null ? ` ${shiftWindow.minutesLeft} min left.` : ""}
+          </div>
+        ) : null}
+
+        {state.error ? (
+          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive break-words">
+            {state.error}
+          </div>
+        ) : null}
+
+        <div className="mt-auto space-y-3">
+          <Link
+            to="/timeline"
+            className="flex h-20 w-full items-center justify-center rounded-3xl bg-primary text-xl font-black text-primary-foreground"
+          >
+            View shift timeline
+          </Link>
+          <Link
+            to="/report"
+            className="flex h-14 w-full items-center justify-center rounded-2xl border border-border bg-secondary font-bold"
+          >
+            View shift report
+          </Link>
+          {canResume ? (
+            <button
+              type="button"
+              onClick={resume}
+              className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card font-bold"
+            >
+              <Mic className="size-5" /> Resume logging
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </AppShell>
+  );
+}
+
+function EndedTile({
+  value,
+  label,
+  tone,
+}: {
+  value: number;
+  label: string;
+  tone?: "success" | "warning";
+}) {
+  const color =
+    tone === "success"
+      ? "text-success"
+      : tone === "warning" && value > 0
+        ? "text-warning"
+        : "text-foreground";
+  return (
+    <div className="rounded-2xl border border-border bg-card px-3 py-4 text-center">
+      <p className={`text-3xl font-black ${color}`}>{value}</p>
+      <p className="text-sm text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
 /* ------------------------------- record -------------------------------- */
 
 type Phase = "idle" | "recording" | "processing" | "confirm" | "edit" | "clarify" | "manual";
@@ -424,8 +776,12 @@ function RecordScreen() {
   const [seconds, setSeconds] = useState(0);
   const [clarifyValue, setClarifyValue] = useState("");
   const [liveTranscript, setLiveTranscript] = useState("");
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [corrections, setCorrections] = useState<CorrectionSuggestion[]>([]);
   const [micBlocked, setMicBlocked] = useState(false);
+  // Voice recording upload, fired the moment the take stops: commit() links it
+  // to the event, or patches the link in if it settles after the POST.
+  const recordingPromiseRef = useRef<Promise<string | null> | null>(null);
+  const settledRecordingIdRef = useRef<string | null>(null);
   const timerRef = useRef<number | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -437,6 +793,16 @@ function RecordScreen() {
   const dataArrayRef = useRef<Uint8Array | null>(null);
   const rafIdRef = useRef<number>(0);
   const finalTranscriptRef = useRef("");
+  const nowShift = useShiftsNow(plantId);
+  const shiftWindow = useShiftWindow(state.windowEnd);
+
+  // Hydrate the plant's window end for sessions started before it was
+  // persisted (fails open: no windowEnd -> no countdown, no block).
+  useEffect(() => {
+    if (!state.windowEnd && nowShift.data?.current_shift?.end) {
+      setState({ windowEnd: nowShift.data.current_shift.end });
+    }
+  }, [state.windowEnd, nowShift.data?.current_shift?.end]);
 
   useEffect(() => {
     return () => {
@@ -502,10 +868,27 @@ function RecordScreen() {
     dataArrayRef.current = null;
   };
 
+  /** Persist the take in the background; resolves to the recording id (or null). */
+  const uploadRecording = async (blob: Blob): Promise<string | null> => {
+    try {
+      const formData = new FormData();
+      formData.append("file", blob, "recording.webm");
+      if (plantId) formData.append("plant_id", plantId);
+      if (state.shiftId) formData.append("shift_id", state.shiftId);
+      const saved = await postFormData<{ id?: string }>("/recordings", formData);
+      return saved?.id ?? null;
+    } catch {
+      // Upload failed — the event still saves, just without audio.
+      return null;
+    }
+  };
+
   const startRecording = async () => {
     if (navigator.vibrate) navigator.vibrate(40);
     setLiveTranscript("");
-    setAudioBlob(null);
+    setCorrections([]);
+    recordingPromiseRef.current = null;
+    settledRecordingIdRef.current = null;
     audioChunksRef.current = [];
     finalTranscriptRef.current = "";
 
@@ -527,27 +910,34 @@ function RecordScreen() {
         const browserTranscript = finalTranscriptRef.current || liveTranscript;
 
         if (blob) {
-          setAudioBlob(blob);
+          // Upload runs in parallel with transcription: by the time the operator
+          // confirms, the recording id is usually already settled.
+          recordingPromiseRef.current = uploadRecording(blob).then((id) => {
+            settledRecordingIdRef.current = id;
+            return id;
+          });
           transcribeAudio(blob, plantId, state.shiftId ?? undefined, browserTranscript)
             .then((result) => {
+              // structured_event is optional — a low-confidence response can
+              // come back with no fields at all.
+              const se = result.structured_event ?? {};
               const event: ShiftEvent = {
                 ...blankEvent(state.user?.name ?? "Operator"),
-                event_type: result.structured_event.event_type ?? "",
-                asset: result.structured_event.asset_name ?? state.line,
-                subsystem: result.structured_event.subsystem ?? "",
-                observation: result.structured_event.observation ?? "",
-                reported_cause: result.structured_event.reported_cause ?? "",
-                suspected_cause: result.structured_event.suspected_cause ?? "",
-                verified_cause: result.structured_event.verified_cause ?? "",
-                action_taken: result.structured_event.action_taken ?? "",
-                severity: result.structured_event.severity ?? "",
-                status: (result.structured_event.status as EventStatus) || "draft",
-                duration_minutes: result.structured_event.duration_seconds
-                  ? Math.round(result.structured_event.duration_seconds / 60)
-                  : null,
+                event_type: se.event_type ?? "",
+                asset: se.asset_name ?? state.line,
+                subsystem: se.subsystem ?? "",
+                observation: se.observation ?? "",
+                reported_cause: se.reported_cause ?? "",
+                suspected_cause: se.suspected_cause ?? "",
+                verified_cause: se.verified_cause ?? "",
+                action_taken: se.action_taken ?? "",
+                severity: se.severity ?? "",
+                status: (se.status as EventStatus) || "draft",
+                duration_minutes: se.duration_seconds ? Math.round(se.duration_seconds / 60) : null,
                 transcript: browserTranscript,
                 source: "voice",
               };
+              setCorrections(se.correction_suggestions ?? []);
               setDraft(event);
               setPhase("confirm");
             })
@@ -636,22 +1026,37 @@ function RecordScreen() {
     }
   };
 
+  // Shift window closed: recording is over for this shift. Drop the audio and
+  // return to idle — the operator finishes on the end-shift screen (prompt-then-
+  // close, never a silent cut-off mid-sentence).
+  useEffect(() => {
+    if (shiftWindow.over && phase === "recording") stopRecording();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shiftWindow.over, phase]);
+
   const commit = async (event: ShiftEvent) => {
-    // Stamp the area/line picked at start onto every saved event.
-    addEvent({ ...event, line_id: state.lineId, area_id: state.areaId });
-    // Save audio recording if user confirmed and audio exists
-    if (audioBlob && event.id) {
-      try {
-        const formData = new FormData();
-        formData.append("file", audioBlob, "recording.webm");
-        formData.append("event_id", event.id);
-        await postFormData("/recordings", formData);
-      } catch {
-        // Recording save failed — event is still saved
-      }
+    const recordingPromise = recordingPromiseRef.current;
+    const linked: ShiftEvent = {
+      // Stamp the area/line picked at start onto every saved event.
+      ...event,
+      line_id: state.lineId,
+      area_id: state.areaId,
+      recording_id: settledRecordingIdRef.current ?? undefined,
+    };
+    recordingPromiseRef.current = null;
+    settledRecordingIdRef.current = null;
+
+    const serverId = await addEvent(linked);
+    // Upload still in flight: link the recording once it lands.
+    if (serverId && !linked.recording_id && recordingPromise) {
+      recordingPromise.then((recId) => {
+        if (!recId) return;
+        api.patch(`/events/${serverId}`, { recording_id: recId }).catch(() => {});
+      });
     }
+
     setDraft(null);
-    setAudioBlob(null);
+    setCorrections([]);
     setPhase("idle");
   };
 
@@ -733,6 +1138,11 @@ function RecordScreen() {
       <AppShell
         title="Check this is right"
         onBack={() => {
+          // Take abandoned: drop the pending recording link too, so a later
+          // manual entry cannot pick up this take's audio.
+          recordingPromiseRef.current = null;
+          settledRecordingIdRef.current = null;
+          setCorrections([]);
           setDraft(null);
           setPhase("idle");
         }}
@@ -779,6 +1189,33 @@ function RecordScreen() {
                 </p>
               </div>
             ) : null}
+            {corrections.length ? (
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Suggested fixes — tap to apply
+                </p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {corrections.map((c) => (
+                    <button
+                      key={`${c.heard}→${c.corrected}`}
+                      type="button"
+                      title={`Replace “${c.heard}” with “${c.corrected}”`}
+                      onClick={() => {
+                        setDraft((d) =>
+                          d ? { ...d, transcript: d.transcript.replace(c.heard, c.corrected) } : d,
+                        );
+                        setCorrections((rest) => rest.filter((x) => x !== c));
+                      }}
+                      className="rounded-full border border-border bg-secondary px-3 py-1.5 text-xs font-medium hover:border-primary"
+                    >
+                      <span className="text-muted-foreground line-through">{c.heard}</span>
+                      <span className="mx-1">→</span>
+                      <span>{c.corrected}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
           <div className="mt-auto space-y-3">
             <button
@@ -804,8 +1241,11 @@ function RecordScreen() {
   const recording = phase === "recording";
   const processing = phase === "processing";
 
+  const who = state.user?.name ?? "Operator";
+  const shiftWord = shiftLabel(state.shiftType) ?? state.shiftName;
+
   return (
-    <AppShell title={`${state.shiftName} · ${state.line}`}>
+    <AppShell title={`${who}, ${shiftWord} · ${state.line}`}>
       <div className="flex flex-1 flex-col items-center justify-between gap-6 py-2">
         <div className="grid w-full grid-cols-2 gap-3">
           <Stat value={state.events.length} label="events recorded" />
