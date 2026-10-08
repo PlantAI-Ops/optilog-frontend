@@ -77,7 +77,7 @@ Positioning line already used in the product: "Operational Record & Intelligence
 - `notes/BACKEND_NOTES.md` — onboarding wizard flow, step-by-step payloads, validation rules, localStorage resume shape.
 - `notes/ADMIN_API_DOCUMENTATION.md`, `notes/SHIFT_CONFIG_BACKEND_GUIDE.md` — admin endpoints and shift-configuration backend behavior.
 - `src/routes/**`, `src/components/**`, `src/lib/**` — the shipped interface itself, the incumbent implementation of every claim above.
-- Demo credentials are pre-filled in the login form (`admin@optilog.com` / `demo1234`) — a dev/demo affordance, not production behavior.
+- The login form starts empty — no credentials are pre-filled.
 - **Absences that future work must not fabricate:** no customer logos, testimonials, case studies, press, pricing, or published benchmarks exist in this repo. No analytics/charts claims beyond what the dashboard actually renders.
 
 ## Product Principles

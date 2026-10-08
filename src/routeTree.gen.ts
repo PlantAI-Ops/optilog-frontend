@@ -16,7 +16,7 @@ import { Route as ReportRouteImport } from './routes/report'
 import { Route as TimelineRouteImport } from './routes/timeline'
 import { Route as ConsoleIndexRouteImport } from './routes/console/index'
 import { Route as ConsoleAdminRouteRouteImport } from './routes/console/admin/route'
-import { Route as ConsoleCalendarRouteImport } from './routes/console/calendar'
+import { Route as ConsoleApprovalsRouteImport } from './routes/console/approvals'
 import { Route as ConsoleDataRouteImport } from './routes/console/data'
 import { Route as ConsoleEventsRouteImport } from './routes/console/events'
 import { Route as ConsoleIntegrationsRouteImport } from './routes/console/integrations'
@@ -71,9 +71,9 @@ const ConsoleAdminRouteRoute = ConsoleAdminRouteRouteImport.update({
   path: '/admin',
   getParentRoute: () => ConsoleRouteRoute,
 } as any)
-const ConsoleCalendarRoute = ConsoleCalendarRouteImport.update({
-  id: '/calendar',
-  path: '/calendar',
+const ConsoleApprovalsRoute = ConsoleApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
   getParentRoute: () => ConsoleRouteRoute,
 } as any)
 const ConsoleDataRoute = ConsoleDataRouteImport.update({
@@ -178,7 +178,7 @@ export interface FileRoutesByFullPath {
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
   '/console/admin': typeof ConsoleAdminRouteRouteWithChildren
-  '/console/calendar': typeof ConsoleCalendarRoute
+  '/console/approvals': typeof ConsoleApprovalsRoute
   '/console/data': typeof ConsoleDataRoute
   '/console/events': typeof ConsoleEventsRoute
   '/console/integrations': typeof ConsoleIntegrationsRoute
@@ -204,7 +204,7 @@ export interface FileRoutesByTo {
   '/end-shift': typeof EndShiftRoute
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
-  '/console/calendar': typeof ConsoleCalendarRoute
+  '/console/approvals': typeof ConsoleApprovalsRoute
   '/console/data': typeof ConsoleDataRoute
   '/console/events': typeof ConsoleEventsRoute
   '/console/integrations': typeof ConsoleIntegrationsRoute
@@ -231,7 +231,7 @@ export interface FileRoutesById {
   '/report': typeof ReportRoute
   '/timeline': typeof TimelineRoute
   '/console/admin': typeof ConsoleAdminRouteRouteWithChildren
-  '/console/calendar': typeof ConsoleCalendarRoute
+  '/console/approvals': typeof ConsoleApprovalsRoute
   '/console/data': typeof ConsoleDataRoute
   '/console/events': typeof ConsoleEventsRoute
   '/console/integrations': typeof ConsoleIntegrationsRoute
@@ -261,7 +261,7 @@ export interface FileRouteTypes {
     | '/report'
     | '/timeline'
     | '/console/admin'
-    | '/console/calendar'
+    | '/console/approvals'
     | '/console/data'
     | '/console/events'
     | '/console/integrations'
@@ -287,7 +287,7 @@ export interface FileRouteTypes {
     | '/end-shift'
     | '/report'
     | '/timeline'
-    | '/console/calendar'
+    | '/console/approvals'
     | '/console/data'
     | '/console/events'
     | '/console/integrations'
@@ -313,7 +313,7 @@ export interface FileRouteTypes {
     | '/report'
     | '/timeline'
     | '/console/admin'
-    | '/console/calendar'
+    | '/console/approvals'
     | '/console/data'
     | '/console/events'
     | '/console/integrations'
@@ -395,11 +395,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleAdminRouteRouteImport
       parentRoute: typeof ConsoleRouteRoute
     }
-    '/console/calendar': {
-      id: '/console/calendar'
-      path: '/calendar'
-      fullPath: '/console/calendar'
-      preLoaderRoute: typeof ConsoleCalendarRouteImport
+    '/console/approvals': {
+      id: '/console/approvals'
+      path: '/approvals'
+      fullPath: '/console/approvals'
+      preLoaderRoute: typeof ConsoleApprovalsRouteImport
       parentRoute: typeof ConsoleRouteRoute
     }
     '/console/data': {
@@ -577,7 +577,7 @@ const ConsoleAdminRouteRouteWithChildren =
 
 interface ConsoleRouteRouteChildren {
   ConsoleAdminRouteRoute: typeof ConsoleAdminRouteRouteWithChildren
-  ConsoleCalendarRoute: typeof ConsoleCalendarRoute
+  ConsoleApprovalsRoute: typeof ConsoleApprovalsRoute
   ConsoleDataRoute: typeof ConsoleDataRoute
   ConsoleEventsRoute: typeof ConsoleEventsRoute
   ConsoleIntegrationsRoute: typeof ConsoleIntegrationsRoute
@@ -592,7 +592,7 @@ interface ConsoleRouteRouteChildren {
 
 const ConsoleRouteRouteChildren: ConsoleRouteRouteChildren = {
   ConsoleAdminRouteRoute: ConsoleAdminRouteRouteWithChildren,
-  ConsoleCalendarRoute: ConsoleCalendarRoute,
+  ConsoleApprovalsRoute: ConsoleApprovalsRoute,
   ConsoleDataRoute: ConsoleDataRoute,
   ConsoleEventsRoute: ConsoleEventsRoute,
   ConsoleIntegrationsRoute: ConsoleIntegrationsRoute,
