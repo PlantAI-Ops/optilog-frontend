@@ -1133,3 +1133,89 @@ const updateRing = () => {
 - Live smoke against the running `--reload` uvicorn worked end-to-end (session ids round-trip, timeline returns event ids, end 200) and the test event was deleted afterwards; a closed session doc + `operator_ids` entry remain on shift `6ac29658f547e57f92febbd0` (noted in the spec).
 - `npm run dev` port regex failed again even with `\D*` (cmd-redirected log encoding) — just read `devlog.txt` raw for the port; 8080 was busy again, server took 8081.
 - Gates: `tsc` clean, eslint/prettier clean on touched files (index.tsx keeps its 4 pre-existing SpeechRecognition `any`s), `vite build` exit 0, backend `pytest tests -q` = **235 passed** (4 new in `tests/api/test_area_line_logging.py`), dev smoke `/` + `/console/layout` 200.
+
+---
+
+## 2026-10-06: On-shift gate + supervisor-approved off-shift logging
+
+**Requests (user-confirmed via questions):** (1) off-shift = plant shift-pattern window matches now AND the caller's team decides (in-window doc, or rotation assigns, or no rotation config = all teams share windows); (2) blocked operators get a **cross-device request+approve** flow (supervisor of the on-shift team approves from their own device, operator polls); (3) supervisors always bypass; (4) enforce frontend gate + backend guard on `POST /operator-shifts/start` (events stay open for offline sync); (5) show current shift + on-shift team on the start screen; (6) no active window -> **any supervisor** may approve; follow-ups: on-shift team without a `supervisor_id` -> any supervisor still approves (never dead-end), operator 403 path verified by pytest only (no operator creds).
+
+**Shipped (backend, spec `optilog-backend/notes/ON_SHIFT_GATE_SPEC.md`):**
+- `app/domain/shifts/on_shift.py` `get_on_shift_context()` = the single gate: pattern window + team via `$or: [{member_ids}, {supervisor_id}]` + evidence (open in-window doc = on; closed doc = off; else rotation-assigns or no rotation). Read-only. Returns `teams_on_shift` (rotation-assigned + open-doc teams; ALL teams when no rotation) and `rotation` for approve validation. `get_current_shift` was refactored onto it and gained `on_shift` / `next_shift` / `teams_on_shift`; Branch C reordered: in-window -> (rotation ok) create-in-window -> (rotation excludes) future-or-pending, fixing the old "future shift as current" fallback. `team_rotating_shift_type()` extracted to `app/workers/shift_generator.py` and reused by `get_plant_shift_now` (dedup, no drift).
+- New `logging_approvals` collection + `app/domain/logging_approvals/service.py` + `app/api/v1/logging_approvals.py`: create/mine/pending/approve/deny; 15-min decision window, fresh 15-min usage window on approve, single-use `used`; lazy expiry flips stale `pending` AND `approved` docs (an approved-but-stale doc would otherwise validate forever). Approve restricted to on-shift-team supervisors when a window is active (empty supervisor set = fallback to any).
+- `POST /operator-shifts/start` guard (`authorize_shift_start`): supervisor+ bypass -> on-shift -> `approval_id` validation (403 with actionable detail otherwise); approval is consumed only AFTER the session insert, so a 409 conflict keeps it usable. Sessions stamp `approval_id`/`approved_by`.
+
+**Shipped (frontend):**
+- `hooks.ts`: `CurrentShiftResponse` += optional `on_shift`/`next_shift`/`teams_on_shift` (optional = fail open on an older backend); `useMyLoggingApproval` (4s poll while pending), `usePendingLoggingApprovals` (8s), create/approve/deny mutations invalidating the `["logging-approval"]` prefix key.
+- `shift-log.ts`: `startLoggingSession(..., approvalId?)` -> `approval_id`.
+- `routes/index.tsx` `StartShiftScreen`: always-on "Running now: <shift> - <team> on shift" banner (`useShiftsNow`); `blocked = on_shift === false && role < supervisor` folded into `canStart`; block card with the approval state machine (request/waiting/approved/denied/expired, optional reason, offline hint) that keeps area/line pickers usable; supervisor inbox with Approve/Deny; removed the dead `teamMismatch` warning; pending-shift banner hidden while blocked.
+
+**Gotchas:**
+- `ShiftPatternCreate` caps `end_hour` at **23** - `time(24)` raises, so tests seed three rows `0-8/8-16/16-0` (union = every hour) instead of freezing time; a 0-24 pattern is API-illegal.
+- mongomock tests: `get_current_shift` previously had ZERO test coverage, so the guard change broke exactly the 2 tests that POST `/operator-shifts/start` (they seeded no pattern and empty `member_ids`) - expected, fixed by seeding both. Final suite: **253 passed**.
+- Frontend fail-open detail: gate keys off `on_shift === false` (not `!== true`) so a missing field from an older backend cannot brick the start screen; same idea for `teams_on_shift` typing (optional).
+- `invalidateQueries({queryKey: ["logging-approval", plantId]})` would NOT match `["logging-approval","mine",plantId]` (position-1 mismatch) - use the bare prefix `["logging-approval"]`.
+- Approve/deny use `require_role`, NOT `require_desktop` - a mobile supervisor must be able to approve from the start screen.
+- Live smoke (tenant-admin): new `/shifts/current` fields returned, create -> 409 dup -> pending list with `operator_name` -> approve -> `mine=approved`, start as plant_manager bypasses (`approval_id: null`). Vite dev smoke `/` 200 on 8081 (8080 busy); read `devlog.txt` raw for the port (ANSI).
+- Gates: `tsc` clean, eslint only pre-existing `any`s (hooks.ts 612/646/1033, index.tsx 18-21), prettier clean after `--write`, `vite build` exit 0, backend `pytest tests -q` = 253 passed (18 new).
+
+## 2026-10-07 - Removed prefilled admin login credentials
+
+**Request:** "I don't want the admin login details placeholder anymore" -> clear the demo prefill on the login form.
+
+**Shipped:** `src/routes/index.tsx` `LoginScreen` email/password `useState` initial values changed from `admin@optilog.com` / `admin123456` to `""` (no placeholder attributes exist on those inputs, so the prefilled values were the only "details"). `PRODUCT.md` "Demo credentials are pre-filled" line replaced with "The login form starts empty".
+
+**Gotchas:** `.impeccable/critique/2026-09-26T22-06-05Z__src.md` P1 still references the old prefill (stale artifact, left as-is); grep for `admin@optilog` if credentials ever reappear.
+
+---
+
+## 2026-10-08: End-of-shift rework + Console Approvals (Calendar merged into Schedule)
+
+**Requests (user-confirmed):** full event summary on end-shift · edit/delete bad transcriptions (timeline + end-shift) · post-end navigation/guards · auto-end when the plant shift window closes (**prompt-then-close**: block recording, operator taps End Shift) · land on `/timeline` after end · operators may delete their own events (relax backend DELETE) · **new Console Approvals tab** (report approvals, confirm/resolve, push-to-maintenance, RCA on breakdowns) + **Calendar folded into Schedule** · queue scope = pending-approval shifts + today's unresolved events. Handover redesign, "Share PDF" (hidden, not built) and per-shift report approval were left as documented assumptions.
+
+**Shipped (frontend):**
+- `shift-log.ts`: `ShiftEvent.operator_id?`; `ShiftState` += `deletedIds`/`pendingDeletes`/`windowEnd`; `addEvent` stamps `operator_id`; local-first `saveEvent` (PATCH), `deleteEvent` (server DELETE when synced+online else `pendingDeletes`), `syncPending` flushes deletes first, `mergeEvents` filters `deletedIds`/`status:"deleted"`, `endShift` treats 404 as success.
+- `routes/end-shift.tsx` (rewritten): full event list via `TimelineEventRow` + `PlanMaintenanceDialog`, inline `EventEditor` shell, window-closed banner, lands on `/timeline`, bottom block switches on `state.endedAt` ("View shift timeline"/"Open report" vs "End Shift"/"Not yet").
+- `routes/timeline.tsx`: row actions + `ShiftSummaryCard` + footer CTA; single top-level `useShiftWindow`.
+- `routes/index.tsx`: `Index()` returns `<ShiftEndedScreen/>` when `state.endedAt` (tiles, handover card, approval badge, resume only when same shift && window running); `handleStart` calls `syncPending()` first and resets `events/deletedIds/endedAt/reportApproved/handover/windowEnd`; `RecordScreen` hydrates `windowEnd` and hard-stops recording when `shiftWindow.over`.
+- `routes/report.tsx`: approve goes through `useApproveShiftReport` (server) then local `approveReport`, badge reads `state.reportApproved || shift.report_approved_at`, dead "Share PDF" removed.
+- Console: new `routes/console/approvals.tsx` (stats + report rows with Approve/Unapprove + event rows with Confirm/Resolve/Push-to-maintenance/Start-RCA → `/console/rca?incident=`), `ScheduleMonthView.tsx` (month grid extracted from the old Calendar route), `schedule.tsx` gained a Week/Month toggle, `ConsoleShell` NAV is now a typed `NavItem[]` with `minRole` (Approvals = supervisor, badge = pending reports via `useReportApprovals`) and dropped the Calendar link; `routes/console/calendar.tsx` deleted; `rca.tsx` takes `?incident=` via `validateSearch`.
+
+**Shipped (backend):**
+- `workers/shift_activator.py`: passes a synthetic `{user_id: None, tenant_id, role: "system_admin"}` to `close_shift` (the old `str(tenant_id)` arg raised TypeError that the broad `except` swallowed — no shift ever auto-closed) and stamps `operator_shifts.ended_at`.
+- `events.py` DELETE relaxed to `require_role("operator")` + passes `user`; `delete_event` allows owners or supervisor+; `list_events` excludes `status:"deleted"` unless explicitly requested.
+- Deleted-event filters added across `dashboard/service.py` (plant summary, recent/my/shift/incident events, carried-over issues, aggregates) and `shifts/service.py` (close-shift counts/downtime, timeline).
+- `plan_maintenance_for_event` + `POST /shifts/{id}/events/{eid}/plan-maintenance` (supervisor): creates `actions` `type="maintenance_intervention"` and flips the event to `planned_maintenance`; `approve_shift_report` + `POST /shifts/{id}/report/{approve,unapprove}`; `GET /plants/{id}/shifts/report-approvals` (queue, merges `operator_shifts.handover`, counts a shift as ended on `actual_end` or closed/handed_over); `actions.py` `type` Query alias; `rca.py` `data: RCACreate = RCACreate()` so an empty body no longer 422s; `get_my_events` payload += `operator_id`/`operator_name`.
+
+**Gotchas:**
+- `exactOptionalPropertyTypes: true`: optional props need `?: T | undefined`, `{ exact: boolean | undefined }` is still rejected by TanStack `ActiveOptions` (use `?? false`), and `search.incident` on a `validateSearch` result is an index-signature access → `search["incident"]`.
+- React hooks must all run before any early `return` (a duplicated `useShiftWindow` below an early return in timeline.tsx threw `React Hook "useShiftWindow" is called conditionally`).
+- Whole-repo `npm run lint` has ~6200 pre-existing CRLF/prettier errors — gate with `npx eslint --fix <touched files>` instead; `tsc` alone takes ~3–4 min (don't cap it at 180s).
+- PowerShell `-replace` + `Set-Content` can mangle UTF-8 — prefer the `edit` tool; verify with a UTF-8 round-trip check after any script-based rewrite.
+- `npm run build` regenerates `routeTree.gen.ts`, so delete a route file and build (not just `tsc`) to drop it.
+- Backend: 19 new tests in `tests/api/test_shift_lifecycle_and_approvals.py` (worker, delete ownership, deleted filters, plan-maintenance, RCA empty body, report approve/queue) → `pytest tests -q` = **317 passed**.
+
+---
+
+## 2026-10-08: Self-learning vocabulary — plant fields, recording link, AI lesson review
+
+**Requests (user-confirmed):** implement the FRONTEND_NOTES 2026-10-08 changelog row (4 items: plant `industry`/`key_terms`/`language_notes`, AI-lessons API, `correction_suggestions`/`transcript_original`, `PATCH /recordings/{id}/transcript`) · plant fields go on the **Onboarding Wizard + both admin PlantEditForms** (no read-only display surface) · lessons queue = **a section inside `/console/approvals`** (user demanded justification first — justification accepted) · transcript fix = "Frontend + tiny backend link" · recording upload = **fire-and-forget** (never block `commit()`).
+
+**Shipped (frontend):**
+- Vocabulary fields: `AdminPlant` (shift-log) + `Plant` (hooks) += `industry`/`key_terms`/`language_notes` (all optional → older backends still typecheck), new `PlantPayload` in admin-hooks behind `useCreatePlant`/`useUpdatePlant`, `WizardData`/`EMPTY_DATA` + resume spreads `...EMPTY_DATA` underneath the saved draft (old localStorage drafts lack the keys → uncontrolled-input warnings otherwise), wizard step-0 UI (industry `maxLength=120`, new `KeyTermsInput` chip editor ≤50 terms × 60 chars with Enter-to-add/remove, `language_notes` textarea 500), and both duplicated `PlantEditForm`s (identical markup; submit passes the trio straight into `updatePlant.mutate(data)`).
+- `correction_suggestions`: `TranscribeResult.structured_event` is now `StructuredEvent | null` (+ `CorrectionSuggestion`); the transcribe handler guards with `const se = result.structured_event ?? {}`; new `corrections` state on `RecordScreen` renders tappable **heard → corrected** chips under the Transcript block on the confirm screen (`draft.transcript.replace(heard, corrected)` + chip removal); cleared on new take / commit / confirm-back.
+- Recording link: the upload moved out of `commit()` into `mediaRecorder.onstop` and runs in parallel with `transcribeAudio` (now also sending `plant_id`/`shift_id`); results live in `recordingPromiseRef` + `settledRecordingIdRef`. `commit()` reads the settled id (no await), stamps `recording_id` onto the event, and — if the upload is still in flight — chains a fire-and-forget `api.patch('/events/'+serverId, {recording_id})`. Refs reset on start / commit / confirm-back so an abandoned take can never attach to a later manual entry. `addEvent` returns the server id (`Promise<string | null>`); `mapMyEventToShiftEvent` maps `source_record_id → recording_id` (revives `PlayAudioButton`, previously dead code).
+- `RecordingBlock` (TimelineEvent.tsx) replaces the transcript block: `useRecording` + `useFixTranscript`, struck-through **Original ASR** when `transcript_original` exists, "still processing"/"could not be processed" copy, play-audio whenever `recording_id`, and a Fix-transcript textarea → `PATCH /recordings/{id}/transcript` → query-cache update.
+- Approvals: 4th StatCard (grid `sm:grid-cols-2 xl:grid-cols-4`), vocabulary section after Shift reports (status chips, `trigger → correction` rows with kind/hits/source/last-seen, Verify + **armed** Reject through the existing `run()`/`pendingId`/`actionError`, inline Add-term form with the trigger field hidden for `kind="term"`), new hooks `useAILessonsByStatus` / `useLessonsToReview` (fetches exactly `suggested` + `ineffective`) / `useAddAILesson` / `useVerifyAILesson` / `useRejectAILesson`; ConsoleShell Approvals badge = `pendingReports + lessonsToReview.total`.
+
+**Shipped (backend):**
+- `ShiftEventCreate.recording_id?` (api/v1/shifts.py) → `recording_source(recording_id, tenant_id)` (new, events/service.py) validates the recording belongs to the tenant and returns `{type: "voice", system: "optilog", record_id}` or `None` (invalid/foreign/unknown ids are dropped silently — the client retries with a PATCH). `EventUpdate.recording_id?` is popped in `update_event` and **merged into the existing source** so an AI-extracted event keeps `type: "ai"` (the vocabulary-learning hook keys off it).
+- 3 new tests in `tests/api/test_shift_lifecycle_and_approvals.py`: create-time link (+ the revived `/events/{id}/audio` endpoint, asserted with `settings.r2_public_url` stubbed so boto3 never runs), late PATCH link, and unknown/foreign ids dropped.
+
+**Gotchas:**
+- **Pre-existing id mismatch (follow-up, out of scope):** local event ids are `evt_<ts>_<rand>` while the server mints ObjectIds, so `POST /recordings`'s `event_id` form field was *always* ignored (the endpoint has no such param) and `saveEvent`/`deleteEvent` PATCH/DELETE local ids → 404s that are swallowed. The create-time `recording_id` link fixes audio; full id reconciliation remains open.
+- Moving the upload to `onstop` means a take the operator backs out of still uploads (previously only confirmed takes did) → orphan recordings in storage; acceptable under the approved fire-and-forget design, but a cleanup policy is eventually needed.
+- Lesson mechanics: only `auto_verified|verified` feed prompts; `suggested` = confidence < `lesson_auto_verify_confidence` (model default 0.6) or `external`, `ineffective` = `recurrence_count ≥ 3` — hence the queue fetches exactly those two statuses rather than "everything not rejected".
+- Verify/reject endpoints are `require_desktop("supervisor")` → 403 in a mobile browser; surfaced through the page's shared `actionError`.
+- PowerShell `Add-Content` defaults to ANSI in 5.1 and mangled every `→`/`—`/`≥` in this entry — truncated the damage with `[System.IO.File]::WriteAllText(..., UTF8Encoding($false))` and re-appended with the `edit` tool.
+- Gates: `tsc` clean (re-run *after* `npm run build`, which regenerates `routeTree.gen.ts`), eslint on touched files = only pre-existing `any`s (admin-hooks ×9, hooks 618/652/1094, index 18-21), `vite build` exit 0, backend `pytest tests -q` = **320 passed** (3 new).

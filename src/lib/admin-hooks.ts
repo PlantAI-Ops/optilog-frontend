@@ -121,10 +121,20 @@ export function useTenantPlants(tenantId: string | undefined) {
   });
 }
 
+/** Plant create/update body — vocabulary fields are optional on older backends. */
+export interface PlantPayload {
+  name?: string;
+  location?: string;
+  timezone?: string;
+  industry?: string;
+  key_terms?: string[];
+  language_notes?: string;
+}
+
 export function useCreatePlant(tenantId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; location?: string; timezone?: string }) =>
+    mutationFn: (data: PlantPayload & { name: string }) =>
       api.post<AdminPlant>(`/admin/tenants/${tenantId}/plants`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "tenants", tenantId, "plants"] });
@@ -135,8 +145,7 @@ export function useCreatePlant(tenantId: string) {
 export function useUpdatePlant(plantId: string, tenantId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name?: string; location?: string; timezone?: string }) =>
-      api.patch<AdminPlant>(`/admin/plants/${plantId}`, data),
+    mutationFn: (data: PlantPayload) => api.patch<AdminPlant>(`/admin/plants/${plantId}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "tenants", tenantId, "plants"] });
     },

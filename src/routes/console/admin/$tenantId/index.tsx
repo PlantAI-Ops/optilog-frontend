@@ -21,6 +21,7 @@ import { CsvInviteUpload } from "@/components/admin/CsvInviteUpload";
 import { PendingInvitations } from "@/components/admin/PendingInvitations";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { KeyTermsInput } from "@/components/admin/KeyTermsInput";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TenantUserTable } from "@/components/admin/TenantUserTable";
@@ -74,13 +75,23 @@ function PlantEditForm({
   isPending,
 }: {
   plant: AdminPlant;
-  onSubmit: (data: { name: string; location: string; timezone: string }) => void;
+  onSubmit: (data: {
+    name: string;
+    location: string;
+    timezone: string;
+    industry: string;
+    key_terms: string[];
+    language_notes: string;
+  }) => void;
   onCancel: () => void;
   isPending: boolean;
 }) {
   const [name, setName] = useState(plant.name);
   const [location, setLocation] = useState(plant.location);
   const [timezone, setTimezone] = useState(plant.timezone);
+  const [industry, setIndustry] = useState(plant.industry ?? "");
+  const [keyTerms, setKeyTerms] = useState<string[]>(plant.key_terms ?? []);
+  const [languageNotes, setLanguageNotes] = useState(plant.language_notes ?? "");
 
   return (
     <div className="space-y-3">
@@ -118,6 +129,30 @@ function PlantEditForm({
           ))}
         </select>
       </div>
+      <div>
+        <Label htmlFor={`edit-industry-${plant.id}`}>Industry</Label>
+        <Input
+          id={`edit-industry-${plant.id}`}
+          maxLength={120}
+          placeholder="e.g. Pulp & paper"
+          value={industry}
+          onChange={(e) => setIndustry(e.target.value)}
+          className="mt-1"
+        />
+      </div>
+      <KeyTermsInput id={`edit-key-terms-${plant.id}`} value={keyTerms} onChange={setKeyTerms} />
+      <div>
+        <Label htmlFor={`edit-language-notes-${plant.id}`}>Language notes</Label>
+        <textarea
+          id={`edit-language-notes-${plant.id}`}
+          maxLength={500}
+          rows={3}
+          placeholder="Notes that help speech recognition (accents, mixed languages, say-slowly names)."
+          value={languageNotes}
+          onChange={(e) => setLanguageNotes(e.target.value)}
+          className="mt-1 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+      </div>
       <div className="flex justify-end gap-2">
         <button
           type="button"
@@ -129,7 +164,15 @@ function PlantEditForm({
         <button
           type="button"
           onClick={() => {
-            if (name.trim()) onSubmit({ name: name.trim(), location, timezone });
+            if (name.trim())
+              onSubmit({
+                name: name.trim(),
+                location,
+                timezone,
+                industry: industry.trim(),
+                key_terms: keyTerms,
+                language_notes: languageNotes.trim(),
+              });
           }}
           disabled={isPending || !name.trim()}
           className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"

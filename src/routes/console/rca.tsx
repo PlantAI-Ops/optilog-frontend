@@ -18,6 +18,9 @@ import {
 } from "@/lib/hooks";
 
 export const Route = createFileRoute("/console/rca")({
+  validateSearch: (search: Record<string, unknown>): { incident?: string | undefined } => ({
+    incident: typeof search["incident"] === "string" ? search["incident"] : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "RCA Workspace | OptiLog Operations Console" },
@@ -39,8 +42,11 @@ export const Route = createFileRoute("/console/rca")({
 function RcaPage() {
   const user = useShiftLog().user;
   const plantId = user?.plant_ids?.[0];
+  // Deep link (?incident=…) — the Approvals queue drops the supervisor on the
+  // incident it just opened an RCA for.
+  const search = Route.useSearch();
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(search["incident"] ?? null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Partial<RCARow>>({});
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -56,7 +62,9 @@ function RcaPage() {
   const updateRCA = useUpdateRCA();
   const approveRCA = useApproveRCA();
   const createRCAFromEvent = useCreateRCAFromEvent();
-  const breakdownEvents = useEvents(plantId, new Date().toISOString().slice(0, 10), { type: "breakdown" });
+  const breakdownEvents = useEvents(plantId, new Date().toISOString().slice(0, 10), {
+    type: "breakdown",
+  });
 
   const hasRCA = !!rca.data;
   const isDraft = rca.data?.status === "draft";
@@ -97,16 +105,18 @@ function RcaPage() {
     if (!currentId) return;
     createRCA.mutate(
       { incidentId: currentId, data: { status: "draft" } },
-      { onSuccess: () => { setEditing(true); setForm({}); } },
+      {
+        onSuccess: () => {
+          setEditing(true);
+          setForm({});
+        },
+      },
     );
   };
 
   const handleSave = () => {
     if (!rca.data) return;
-    updateRCA.mutate(
-      { rcaId: rca.data.id, data: form },
-      { onSuccess: () => setEditing(false) },
-    );
+    updateRCA.mutate({ rcaId: rca.data.id, data: form }, { onSuccess: () => setEditing(false) });
   };
 
   const handleApprove = () => {
@@ -140,7 +150,9 @@ function RcaPage() {
                 >
                   <Plus className="size-3" />
                   Create RCA
-                  <ChevronDown className={`size-3 transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
+                  <ChevronDown
+                    className={`size-3 transition-transform ${dropdownOpen ? "rotate-180" : ""}`}
+                  />
                 </button>
                 {dropdownOpen ? (
                   <div className="absolute right-0 top-full z-10 mt-1 w-72 rounded-xl border border-border bg-card shadow-lg">
@@ -173,7 +185,8 @@ function RcaPage() {
                             >
                               <p className="text-xs font-medium">{e.description}</p>
                               <p className="mt-0.5 text-xs text-muted-foreground">
-                                {e.line_name} · {e.timestamp.slice(11, 16)} · {SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}
+                                {e.line_name} · {e.timestamp.slice(11, 16)} ·{" "}
+                                {SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}
                               </p>
                             </button>
                           </li>
@@ -190,7 +203,10 @@ function RcaPage() {
               <li key={i.id}>
                 <button
                   type="button"
-                  onClick={() => { setSelectedId(i.id); setEditing(false); }}
+                  onClick={() => {
+                    setSelectedId(i.id);
+                    setEditing(false);
+                  }}
                   className={`w-full px-4 py-3 text-left ${
                     i.id === currentId ? "bg-secondary" : "hover:bg-secondary/50"
                   }`}
@@ -199,7 +215,8 @@ function RcaPage() {
                     {i.ref} {i.title}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {i.line_name} · {i.duration_minutes} min · {STATUS_LABEL[i.status as keyof typeof STATUS_LABEL] ?? i.status}
+                    {i.line_name} · {i.duration_minutes} min ·{" "}
+                    {STATUS_LABEL[i.status as keyof typeof STATUS_LABEL] ?? i.status}
                   </p>
                 </button>
               </li>
@@ -215,7 +232,11 @@ function RcaPage() {
             <>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard label="Incident" value={incident.ref} hint={incident.date} />
-                <StatCard label="Duration" value={`${incident.duration_minutes} min`} tone="warning" />
+                <StatCard
+                  label="Duration"
+                  value={`${incident.duration_minutes} min`}
+                  tone="warning"
+                />
                 <StatCard
                   label="Shift"
                   value={incident.shift_name ?? "—"}
@@ -230,14 +251,20 @@ function RcaPage() {
                 </div>
               ) : !hasRCA ? (
                 <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
-                  <p className="text-sm text-muted-foreground">No investigation started for this incident.</p>
+                  <p className="text-sm text-muted-foreground">
+                    No investigation started for this incident.
+                  </p>
                   <button
                     type="button"
                     onClick={handleStartInvestigation}
                     disabled={createRCA.isPending}
                     className="mt-4 flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
                   >
-                    {createRCA.isPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                    {createRCA.isPending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="size-4" />
+                    )}
                     Start Investigation
                   </button>
                 </div>
@@ -245,11 +272,15 @@ function RcaPage() {
                 <>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                        rca.data.status === "approved" ? "bg-success/20 text-success" :
-                        rca.data.status === "completed" ? "bg-primary/20 text-primary" :
-                        "bg-secondary text-secondary-foreground"
-                      }`}>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                          rca.data.status === "approved"
+                            ? "bg-success/20 text-success"
+                            : rca.data.status === "completed"
+                              ? "bg-primary/20 text-primary"
+                              : "bg-secondary text-secondary-foreground"
+                        }`}
+                      >
                         {rca.data.status}
                       </span>
                       {rca.data.ai_insight ? (
@@ -276,7 +307,11 @@ function RcaPage() {
                           disabled={updateRCA.isPending}
                           className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60"
                         >
-                          {updateRCA.isPending ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
+                          {updateRCA.isPending ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <Save className="size-3" />
+                          )}
                           Save
                         </button>
                       ) : null}
@@ -287,7 +322,11 @@ function RcaPage() {
                           disabled={approveRCA.isPending}
                           className="flex items-center gap-1.5 rounded-lg bg-success px-3 py-1.5 text-xs font-semibold text-success-foreground disabled:opacity-60"
                         >
-                          {approveRCA.isPending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                          {approveRCA.isPending ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <Check className="size-3" />
+                          )}
                           Approve
                         </button>
                       ) : null}
@@ -305,7 +344,9 @@ function RcaPage() {
                             </span>
                             <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" />
                             <span className="flex-1 text-sm">{t.label}</span>
-                            <SourceBadge>{SOURCE_LABEL[t.source as keyof typeof SOURCE_LABEL] ?? t.source}</SourceBadge>
+                            <SourceBadge>
+                              {SOURCE_LABEL[t.source as keyof typeof SOURCE_LABEL] ?? t.source}
+                            </SourceBadge>
                           </li>
                         ))}
                       </ol>
@@ -320,7 +361,9 @@ function RcaPage() {
                             className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
                           >
                             {e.label}
-                            <SourceBadge>{SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}</SourceBadge>
+                            <SourceBadge>
+                              {SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}
+                            </SourceBadge>
                           </li>
                         ))}
                       </ul>
@@ -330,12 +373,26 @@ function RcaPage() {
                   <div className="rounded-xl border border-border bg-card p-4">
                     <h2 className="text-sm font-semibold">Investigation</h2>
                     <dl className="mt-3 grid gap-3 md:grid-cols-3">
-                      <Field label="Problem" value={editing ? (form.problem ?? "") : rca.data.problem} editing={editing}
-                        onChange={(v) => setForm((f) => ({ ...f, problem: v }))} />
-                      <Field label="Observed condition" value={editing ? (form.observed_condition ?? "") : rca.data.observed_condition} editing={editing}
-                        onChange={(v) => setForm((f) => ({ ...f, observed_condition: v }))} />
-                      <Field label="Root cause" value={editing ? (form.root_cause ?? "") : rca.data.root_cause} editing={editing}
-                        onChange={(v) => setForm((f) => ({ ...f, root_cause: v }))} />
+                      <Field
+                        label="Problem"
+                        value={editing ? (form.problem ?? "") : rca.data.problem}
+                        editing={editing}
+                        onChange={(v) => setForm((f) => ({ ...f, problem: v }))}
+                      />
+                      <Field
+                        label="Observed condition"
+                        value={
+                          editing ? (form.observed_condition ?? "") : rca.data.observed_condition
+                        }
+                        editing={editing}
+                        onChange={(v) => setForm((f) => ({ ...f, observed_condition: v }))}
+                      />
+                      <Field
+                        label="Root cause"
+                        value={editing ? (form.root_cause ?? "") : rca.data.root_cause}
+                        editing={editing}
+                        onChange={(v) => setForm((f) => ({ ...f, root_cause: v }))}
+                      />
                     </dl>
 
                     <h3 className="mt-5 text-sm font-semibold">5 Why</h3>
@@ -351,10 +408,22 @@ function RcaPage() {
                     </ol>
 
                     <dl className="mt-5 grid gap-3 md:grid-cols-2">
-                      <Field label="Corrective action" value={editing ? (form.corrective_action ?? "") : rca.data.corrective_action} editing={editing}
-                        onChange={(v) => setForm((f) => ({ ...f, corrective_action: v }))} />
-                      <Field label="Preventive action" value={editing ? (form.preventive_action ?? "") : rca.data.preventive_action} editing={editing}
-                        onChange={(v) => setForm((f) => ({ ...f, preventive_action: v }))} />
+                      <Field
+                        label="Corrective action"
+                        value={
+                          editing ? (form.corrective_action ?? "") : rca.data.corrective_action
+                        }
+                        editing={editing}
+                        onChange={(v) => setForm((f) => ({ ...f, corrective_action: v }))}
+                      />
+                      <Field
+                        label="Preventive action"
+                        value={
+                          editing ? (form.preventive_action ?? "") : rca.data.preventive_action
+                        }
+                        editing={editing}
+                        onChange={(v) => setForm((f) => ({ ...f, preventive_action: v }))}
+                      />
                     </dl>
                   </div>
 
@@ -369,9 +438,14 @@ function RcaPage() {
                     ) : (
                       <ul className="divide-y divide-border/60">
                         {linkedEvents.data?.map((e) => (
-                          <li key={e.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                          <li
+                            key={e.id}
+                            className="flex items-center justify-between gap-4 px-4 py-3"
+                          >
                             <span className="text-sm">{e.description}</span>
-                            <SourceBadge>{SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}</SourceBadge>
+                            <SourceBadge>
+                              {SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}
+                            </SourceBadge>
                           </li>
                         ))}
                         {linkedEvents.data?.length === 0 ? (

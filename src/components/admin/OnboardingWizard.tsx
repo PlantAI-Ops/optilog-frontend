@@ -9,6 +9,7 @@ import {
   type TeamData,
   hasTimeOverlap,
 } from "./PlantSetupForm";
+import { KeyTermsInput } from "./KeyTermsInput";
 import {
   useCreatePlant,
   useUpdatePlant,
@@ -29,6 +30,9 @@ interface WizardData {
   plantName: string;
   location: string;
   timezone: string;
+  industry: string;
+  key_terms: string[];
+  language_notes: string;
   areas: AreaData[];
   lines: LineData[];
   teams: TeamData[];
@@ -128,6 +132,9 @@ const EMPTY_DATA: WizardData = {
   plantName: "",
   location: "",
   timezone: "UTC",
+  industry: "",
+  key_terms: [],
+  language_notes: "",
   areas: [{ name: "", description: "" }],
   lines: [{ name: "Line-1", areaIndex: 0 }],
   teams: [{ name: "Team A", shift_config: defaultShiftConfig("regular_day") }],
@@ -222,7 +229,10 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
       setStep(saved.step);
       // Older drafts could hold setupMode "preset"/"skip" and per-area line
       // duplication — coerce both onto the current single-count config path.
+      // Older drafts predate the vocabulary fields — spread the defaults
+      // underneath so those inputs stay controlled.
       setData({
+        ...EMPTY_DATA,
         ...saved.data,
         setupMode: "config",
         lines: normalizeLines(saved.data.lines),
@@ -258,12 +268,18 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
             name: data.plantName,
             location: data.location,
             timezone: data.timezone,
+            industry: data.industry.trim(),
+            key_terms: data.key_terms,
+            language_notes: data.language_notes.trim(),
           });
         } else {
           const result = await createPlant.mutateAsync({
             name: data.plantName,
             location: data.location,
             timezone: data.timezone,
+            industry: data.industry.trim(),
+            key_terms: data.key_terms,
+            language_notes: data.language_notes.trim(),
           });
           setPlantId(result.id);
         }
@@ -471,8 +487,36 @@ export function OnboardingWizard({ tenantId }: { tenantId: string }) {
                 <option value="Europe/London">London</option>
                 <option value="Europe/Berlin">Berlin</option>
                 <option value="Asia/Tokyo">Tokyo</option>
-                <option value="Asia/Shanghai">Shanghai</option>
+                <option value="Asia/Shanghai">Shanghai </option>
               </select>
+            </div>
+            <div>
+              <Label htmlFor="plant-industry">Industry</Label>
+              <Input
+                id="plant-industry"
+                maxLength={120}
+                placeholder="e.g. Pulp & paper"
+                value={data.industry}
+                onChange={(e) => update({ industry: e.target.value })}
+                className="mt-1"
+              />
+            </div>
+            <KeyTermsInput
+              id="plant-key-terms"
+              value={data.key_terms}
+              onChange={(key_terms) => update({ key_terms })}
+            />
+            <div>
+              <Label htmlFor="plant-language-notes">Language notes</Label>
+              <textarea
+                id="plant-language-notes"
+                maxLength={500}
+                rows={3}
+                placeholder="e.g. Operators mix Spanish and English; say machine names slowly."
+                value={data.language_notes}
+                onChange={(e) => update({ language_notes: e.target.value })}
+                className="mt-1 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
             </div>
           </div>
         )}

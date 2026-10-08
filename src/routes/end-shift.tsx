@@ -1,16 +1,25 @@
 import { useEffect, useState } from "react";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Loader2, Mic, Wrench } from "lucide-react";
+import { Loader2, Mic } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
+import { EventEditor } from "@/components/shift/EventEditor";
+import {
+  PlanMaintenanceDialog,
+  type PlanMaintenanceIssue,
+} from "@/components/shift/PlanMaintenanceDialog";
+import { TimelineEventRow } from "@/components/shift/TimelineEvent";
+import { usePlanMaintenance } from "@/lib/hooks";
+import { useShiftWindow } from "@/hooks/use-shift-window";
 import {
   canLogShift,
+  deleteEvent,
   endShift,
   hasMinRole,
+  saveEvent,
   unresolvedCount,
   useShiftLog,
-  updateEvent,
+  type ShiftEvent,
 } from "@/lib/shift-log";
-import { usePlanMaintenance } from "@/lib/hooks";
 
 export const Route = createFileRoute("/end-shift")({
   head: () => ({
@@ -35,14 +44,18 @@ function EndShiftPage() {
   const state = useShiftLog();
   const navigate = useNavigate();
   const [note, setNote] = useState(state.handover);
-  const [selectedForMaintenance, setSelectedForMaintenance] = useState<Set<string>>(new Set());
-  const [maintenanceDate, setMaintenanceDate] = useState(() =>
-    new Date().toISOString().slice(0, 10),
-  );
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [planEventId, setPlanEventId] = useState<string | null>(null);
+  const [planDate, setPlanDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [planNotes, setPlanNotes] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const unresolved = unresolvedCount(state);
   const resolved = state.events.filter((e) => e.status === "resolved").length;
   const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
+  const userId = state.user?.id ?? null;
   const planMaintenance = usePlanMaintenance();
+  const shiftWindow = useShiftWindow(state.windowEnd);
 
   // Part of the voice logging flow — shift_manager+ belongs on the manager home.
   const canLog = canLogShift(state.user?.role);
@@ -51,47 +64,43 @@ function EndShiftPage() {
   }, [state.user, canLog, navigate]);
   if (state.user && !canLog) return null;
 
-  const unresolvedEvents = state.events.filter(
-    (e) => e.status !== "resolved" && e.status !== "planned_maintenance",
-  );
+  const canManage = (event: ShiftEvent) =>
+    isSupervisor || (!!userId && event.operator_id === userId);
 
-  const toggleEvent = (id: string) => {
-    setSelectedForMaintenance((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
+  const editing = state.events.find((e) => e.id === editId);
+  if (editing) {
+    return (
+      <AppShell title="Edit event">
+        <EventEditor
+          event={editing}
+          onCancel={() => setEditId(null)}
+          onSave={(e) => {
+            setActionError(null);
+            void saveEvent(e.id, e).catch((err: unknown) =>
+              setActionError(err instanceof Error ? err.message : "Could not save the event."),
+            );
+            setEditId(null);
+          }}
+        />
+      </AppShell>
+    );
+  }
+
+  const planEvent = planEventId ? state.events.find((e) => e.id === planEventId) : null;
+  const issue: PlanMaintenanceIssue | null = planEvent
+    ? {
+        title: planEvent.observation || planEvent.event_type,
+        subtitle: `${planEvent.asset} · ${planEvent.severity}`,
       }
-      return next;
-    });
-  };
+    : null;
 
   const handleEnd = async () => {
+    setActionError(null);
     try {
-      // Push selected events to planned maintenance
-      if (isSupervisor && selectedForMaintenance.size > 0) {
-        const plantId = state.user?.plant_ids?.[0] ?? "";
-        for (const eventId of selectedForMaintenance) {
-          const event = state.events.find((e) => e.id === eventId);
-          if (!event) continue;
-          try {
-            await planMaintenance.mutateAsync({
-              shiftId: state.shiftId ?? "",
-              eventId,
-              plantId,
-              plannedDate: maintenanceDate,
-              notes: "",
-              assignedTeam: "",
-            });
-            updateEvent(eventId, { status: "planned_maintenance" });
-          } catch {
-            // continue with other events
-          }
-        }
-      }
       await endShift(note);
-      navigate({ to: "/report" });
+      // The timeline is the post-shift home: full event list, summary card,
+      // and the report behind a single link.
+      navigate({ to: "/timeline" });
     } catch {
       // error is set in state by endShift()
     }
@@ -101,10 +110,61 @@ function EndShiftPage() {
     <AppShell title="End of shift">
       <div className="flex flex-1 flex-col gap-5">
         <h1 className="text-2xl font-black">Shift summary</h1>
+
+        {shiftWindow.over ? (
+          <p className="rounded-2xl border border-warning/40 bg-warning/10 p-4 text-base font-medium text-warning">
+            The shift window has closed. End the shift to hand over — recording is off.
+          </p>
+        ) : null}
+
         <div className="grid grid-cols-3 gap-3">
           <Tile value={state.events.length} label="events" />
           <Tile value={resolved} label="resolved" tone="success" />
           <Tile value={unresolved} label="unresolved" tone="warning" />
+        </div>
+
+        <div>
+          <p className="text-lg font-bold">Everything logged this shift</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Fix or remove bad transcriptions here before you hand over.
+          </p>
+          <div className="mt-3 space-y-3">
+            {state.events.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-border p-6 text-center text-base text-muted-foreground">
+                No events were logged this shift.
+              </p>
+            ) : (
+              state.events.map((event) => (
+                <TimelineEventRow
+                  key={event.id}
+                  event={event}
+                  open={openId === event.id}
+                  onToggle={() => setOpenId(openId === event.id ? null : event.id)}
+                  shiftId={state.shiftId ?? undefined}
+                  canEdit={canManage(event)}
+                  canDelete={canManage(event)}
+                  canPlanMaintenance={isSupervisor}
+                  onEdit={() => {
+                    setActionError(null);
+                    setEditId(event.id);
+                  }}
+                  onDelete={() => {
+                    setActionError(null);
+                    void deleteEvent(event.id).catch((err: unknown) =>
+                      setActionError(
+                        err instanceof Error ? err.message : "Could not delete the event.",
+                      ),
+                    );
+                  }}
+                  onPlanMaintenance={() => {
+                    setPlanDate(new Date().toISOString().slice(0, 10));
+                    setPlanNotes("");
+                    setPlanEventId(event.id);
+                  }}
+                />
+              ))
+            )}
+          </div>
         </div>
 
         <div>
@@ -127,69 +187,9 @@ function EndShiftPage() {
           </button>
         </div>
 
-        {isSupervisor && unresolvedEvents.length > 0 ? (
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <div className="flex items-center gap-2">
-              <Wrench className="size-5 text-primary" />
-              <p className="text-lg font-bold">Push to planned maintenance?</p>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Select unresolved issues to schedule for the next maintenance window.
-            </p>
-
-            <div className="mt-3 space-y-2">
-              {unresolvedEvents.map((event) => (
-                <label
-                  key={event.id}
-                  className={`flex items-start gap-3 rounded-xl border p-3 transition-colors ${
-                    selectedForMaintenance.has(event.id)
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:bg-secondary/50"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedForMaintenance.has(event.id)}
-                    onChange={() => toggleEvent(event.id)}
-                    className="mt-1 size-4 shrink-0 rounded border-border"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium leading-snug break-words">
-                      {event.observation || event.event_type}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {event.asset} · {event.severity}
-                    </p>
-                  </div>
-                </label>
-              ))}
-            </div>
-
-            {selectedForMaintenance.size > 0 && (
-              <div className="mt-3 flex items-center gap-3">
-                <label className="block flex-1">
-                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Maintenance date
-                  </span>
-                  <input
-                    type="date"
-                    value={maintenanceDate}
-                    onChange={(e) => setMaintenanceDate(e.target.value)}
-                    className="mt-1 h-10 w-full rounded-xl border border-input bg-secondary px-3 text-sm outline-none focus:border-ring"
-                  />
-                </label>
-                <p className="mt-5 text-xs text-muted-foreground">
-                  {selectedForMaintenance.size} issue{selectedForMaintenance.size !== 1 ? "s" : ""}{" "}
-                  selected
-                </p>
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        {state.error ? (
+        {state.error || actionError ? (
           <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive break-words">
-            {state.error}
+            {actionError ?? state.error}
           </div>
         ) : null}
 
@@ -200,23 +200,71 @@ function EndShiftPage() {
         ) : null}
 
         <div className="mt-auto space-y-3">
-          <button
-            type="button"
-            onClick={handleEnd}
-            disabled={state.loading}
-            className="flex h-20 w-full items-center justify-center gap-3 rounded-3xl bg-primary text-xl font-black text-primary-foreground disabled:opacity-60"
-          >
-            {state.loading ? <Loader2 className="size-5 animate-spin" /> : null}
-            End Shift
-          </button>
-          <Link
-            to="/"
-            className="flex h-14 w-full items-center justify-center rounded-2xl border border-border bg-secondary font-bold"
-          >
-            Not yet — back to shift
-          </Link>
+          {state.endedAt ? (
+            <>
+              <Link
+                to="/timeline"
+                className="flex h-20 w-full items-center justify-center rounded-3xl bg-primary text-xl font-black text-primary-foreground"
+              >
+                View shift timeline
+              </Link>
+              <Link
+                to="/report"
+                className="flex h-14 w-full items-center justify-center rounded-2xl border border-border bg-secondary font-bold"
+              >
+                Open report
+              </Link>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleEnd}
+                disabled={state.loading}
+                className="flex h-20 w-full items-center justify-center gap-3 rounded-3xl bg-primary text-xl font-black text-primary-foreground disabled:opacity-60"
+              >
+                {state.loading ? <Loader2 className="size-5 animate-spin" /> : null}
+                End Shift
+              </button>
+              <Link
+                to="/"
+                className="flex h-14 w-full items-center justify-center rounded-2xl border border-border bg-secondary font-bold"
+              >
+                Not yet — back to shift
+              </Link>
+            </>
+          )}
         </div>
       </div>
+
+      {planEvent && issue ? (
+        <PlanMaintenanceDialog
+          issue={issue}
+          date={planDate}
+          notes={planNotes}
+          onDateChange={setPlanDate}
+          onNotesChange={setPlanNotes}
+          onConfirm={async () => {
+            try {
+              await planMaintenance.mutateAsync({
+                shiftId: state.shiftId ?? "",
+                eventId: planEvent.id,
+                plantId: state.user?.plant_ids?.[0] ?? "",
+                plannedDate: planDate,
+                notes: planNotes,
+                assignedTeam: "",
+              });
+              await saveEvent(planEvent.id, { status: "planned_maintenance" });
+              setPlanEventId(null);
+            } catch (err: unknown) {
+              if (err instanceof Error) setActionError(err.message);
+            }
+          }}
+          onCancel={() => setPlanEventId(null)}
+          isPending={planMaintenance.isPending}
+          error={planMaintenance.error instanceof Error ? planMaintenance.error.message : null}
+        />
+      ) : null}
     </AppShell>
   );
 }

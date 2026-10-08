@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
 import { CurrentShiftBanner } from "@/components/console/CurrentShiftBanner";
+import { ScheduleMonthView } from "@/components/console/ScheduleMonthView";
 import { ScheduleConfigDialog } from "@/components/console/ScheduleConfigDialog";
 import { TeamMembersDialog } from "@/components/console/TeamMembersDialog";
 import { EmptyPlantState } from "@/components/console/EmptyPlantState";
@@ -73,6 +74,8 @@ function SchedulePage() {
   const canManage = !!user && hasMinRole(user.role, "supervisor");
 
   const [anchor, setAnchor] = useState(todayStr());
+  // Week = the crew grid; Month = the old Calendar tab (shifts + events by day).
+  const [view, setView] = useState<"week" | "month">("week");
   const [selected, setSelected] = useState<{ team: PatternTeam; day: PatternDay } | null>(null);
   const [membersTeam, setMembersTeam] = useState<TeamDetail | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
@@ -231,201 +234,242 @@ function SchedulePage() {
   return (
     <ConsoleShell
       title="Schedule"
-      subtitle="Template preview + weekly grid — click a shift for details"
+      subtitle="Template preview, weekly grid and month view — click a shift for details"
     >
       <CurrentShiftBanner />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          aria-label="Previous week"
-          onClick={() => moveAnchor(-7)}
-          className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-secondary"
+        <div
+          className="flex overflow-hidden rounded-lg border border-border text-xs font-medium"
+          role="tablist"
+          aria-label="Schedule view"
         >
-          <ChevronLeft className="size-4" />
-        </button>
-        <span className="min-w-40 text-center text-sm font-medium">{rangeLabel}</span>
-        <button
-          type="button"
-          aria-label="Next week"
-          onClick={() => moveAnchor(7)}
-          className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-secondary"
-        >
-          <ChevronRight className="size-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => setAnchor(today)}
-          disabled={anchor === today}
-          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          Today
-        </button>
-        {canManage ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => setConfigOpen(true)}>
-            <Settings2 className="size-3.5" />
-            Edit schedule
-          </Button>
-        ) : null}
-
-        <div className="ml-auto flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          {LEGEND.map(([type, label]) => (
-            <span key={type} className="inline-flex items-center gap-1.5">
-              <span className={cn("size-2.5 rounded-full", shiftCellStyle(type).dot)} />
-              {label}
-            </span>
+          {(["week", "month"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              role="tab"
+              aria-selected={view === v}
+              onClick={() => {
+                setView(v);
+                setSelected(null);
+              }}
+              className={`px-3 py-1.5 capitalize ${
+                view === v
+                  ? "bg-secondary text-foreground"
+                  : "text-muted-foreground hover:bg-secondary/60"
+              }`}
+            >
+              {v}
+            </button>
           ))}
         </div>
       </div>
 
-      {pattern.isLoading || teams.isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="size-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : pattern.isError ? (
-        <div className="space-y-4">
-          <div className="rounded-xl border border-border bg-card p-6 text-center">
-            <p className="font-medium">Shift pattern isn't available yet.</p>
-            <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-              This view needs{" "}
-              <code className="font-mono text-xs">GET /plants/&#123;id&#125;/shifts/pattern</code>{" "}
-              on the backend. Team rosters are still available below.
-            </p>
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {teams.data?.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setMembersTeam(detailMap.get(t.id) ?? { id: t.id, name: t.name })}
-                  className="rounded-full border border-border bg-secondary px-3 py-1.5 text-xs font-medium hover:bg-secondary/80"
-                >
-                  {t.name}
-                </button>
-              ))}
-              {teams.data?.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No teams configured.</p>
-              ) : null}
-            </div>
-          </div>
-          <CyclePreview
-            config={{ type: "regular_day", start_hour: 8, end_hour: 17, weekdays_only: true }}
-          />
-        </div>
-      ) : (teams.data ?? []).length === 0 ? (
-        <EmptyPlantState
-          title="No teams yet"
-          description="Shift patterns are generated per team during onboarding (areas, lines, and teams). Configure the plant setup to see the schedule here."
-        />
-      ) : stripRows.length === 0 ? (
-        <div className="space-y-3">
-          <div className="rounded-xl border border-dashed border-border bg-card p-5 text-center">
-            <p className="text-sm font-medium">No schedule generated yet.</p>
-            <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-              Run plant setup to generate the shift template — until then, the default pattern is
-              shown below.
-            </p>
-          </div>
-          <CyclePreview
-            config={{ type: "regular_day", start_hour: 8, end_hour: 17, weekdays_only: true }}
-          />
-        </div>
+      {view === "month" ? (
+        <ScheduleMonthView plantId={plantId} />
       ) : (
         <>
-          <div className="mb-4">
-            <ShiftCycleStrip
-              caption={`Schedule template — ${rangeLabel}`}
-              colDates={cols}
-              today={today}
-              rows={stripRows}
-            />
-          </div>
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              aria-label="Previous week"
+              onClick={() => moveAnchor(-7)}
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-secondary"
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+            <span className="min-w-40 text-center text-sm font-medium">{rangeLabel}</span>
+            <button
+              type="button"
+              aria-label="Next week"
+              onClick={() => moveAnchor(7)}
+              className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-secondary"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setAnchor(today)}
+              disabled={anchor === today}
+              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              Today
+            </button>
+            {canManage ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => setConfigOpen(true)}>
+                <Settings2 className="size-3.5" />
+                Edit schedule
+              </Button>
+            ) : null}
 
-          <div className="overflow-x-auto pb-2">
-            <div className="min-w-[820px]">
-              {gridHeader}
-              {pattern.data?.teams.map((pt) => {
-                const byDate = new Map(pt.days.map((d) => [d.date, d]));
-                return (
-                  <div
-                    key={pt.team_id}
-                    className="grid grid-cols-[160px_repeat(7,minmax(0,1fr))] items-stretch gap-2 py-1"
-                  >
-                    <div className="flex min-w-0 flex-col justify-center">
-                      <p className="truncate text-sm font-medium">{pt.team_name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {pt.supervisor_name
-                          ? pt.supervisor_name
-                          : pt.kind === "track"
-                            ? "Crew template"
-                            : ""}
-                      </p>
-                    </div>
-                    {cols.map((col) => {
-                      const day = byDate.get(col);
-                      const type = day?.shift_type ?? null;
-                      const style = shiftCellStyle(type);
-                      const isCurrent =
-                        !!currentShift &&
-                        !!day &&
-                        pt.team_id === currentShift.team?.id &&
-                        col === currentShift.date;
-                      let label = "—";
-                      if (day && type) label = shiftTypeLetter(type);
-                      const hours = day && day.start && day.end ? `${day.start}–${day.end}` : "";
-                      return (
-                        <button
-                          key={col}
-                          type="button"
-                          disabled={!day}
-                          onClick={() => day && openCell(pt, day)}
-                          className={cn(
-                            "rounded-lg border px-2 py-2 text-center transition-colors",
-                            style.cell,
-                            col === today && "ring-1 ring-primary/40",
-                            isCurrent && "ring-2 ring-success",
-                            day
-                              ? "hover:border-ring hover:shadow-sm"
-                              : "cursor-default opacity-40 hover:shadow-none",
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              "block truncate text-xs font-semibold",
-                              day && type !== "off" && type !== null
-                                ? style.text
-                                : "text-muted-foreground",
-                            )}
-                          >
-                            {label}
-                            {day?.override_id ? (
-                              <span className="ml-0.5 text-[9px] opacity-70" title="Overridden">
-                                *
-                              </span>
-                            ) : null}
-                          </span>
-                          {hours ? (
-                            <span className="block text-[11px] text-muted-foreground">{hours}</span>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          {gridLegend.length > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              {gridLegend.map((entry) => (
-                <span key={entry.letter} className="flex items-center gap-1.5">
-                  <span className={cn("inline-block size-2 rounded-full", entry.dot)} />
-                  <span className="font-semibold text-foreground">{entry.letter}</span>
-                  {entry.label}
-                  {entry.time ? `: ${entry.time}` : ""}
+            <div className="ml-auto flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+              {LEGEND.map(([type, label]) => (
+                <span key={type} className="inline-flex items-center gap-1.5">
+                  <span className={cn("size-2.5 rounded-full", shiftCellStyle(type).dot)} />
+                  {label}
                 </span>
               ))}
             </div>
-          ) : null}
+          </div>
+
+          {pattern.isLoading || teams.isLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="size-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : pattern.isError ? (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-border bg-card p-6 text-center">
+                <p className="font-medium">Shift pattern isn't available yet.</p>
+                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+                  This view needs{" "}
+                  <code className="font-mono text-xs">
+                    GET /plants/&#123;id&#125;/shifts/pattern
+                  </code>{" "}
+                  on the backend. Team rosters are still available below.
+                </p>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  {teams.data?.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() =>
+                        setMembersTeam(detailMap.get(t.id) ?? { id: t.id, name: t.name })
+                      }
+                      className="rounded-full border border-border bg-secondary px-3 py-1.5 text-xs font-medium hover:bg-secondary/80"
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                  {teams.data?.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No teams configured.</p>
+                  ) : null}
+                </div>
+              </div>
+              <CyclePreview
+                config={{ type: "regular_day", start_hour: 8, end_hour: 17, weekdays_only: true }}
+              />
+            </div>
+          ) : (teams.data ?? []).length === 0 ? (
+            <EmptyPlantState
+              title="No teams yet"
+              description="Shift patterns are generated per team during onboarding (areas, lines, and teams). Configure the plant setup to see the schedule here."
+            />
+          ) : stripRows.length === 0 ? (
+            <div className="space-y-3">
+              <div className="rounded-xl border border-dashed border-border bg-card p-5 text-center">
+                <p className="text-sm font-medium">No schedule generated yet.</p>
+                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+                  Run plant setup to generate the shift template — until then, the default pattern
+                  is shown below.
+                </p>
+              </div>
+              <CyclePreview
+                config={{ type: "regular_day", start_hour: 8, end_hour: 17, weekdays_only: true }}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="mb-4">
+                <ShiftCycleStrip
+                  caption={`Schedule template — ${rangeLabel}`}
+                  colDates={cols}
+                  today={today}
+                  rows={stripRows}
+                />
+              </div>
+
+              <div className="overflow-x-auto pb-2">
+                <div className="min-w-[820px]">
+                  {gridHeader}
+                  {pattern.data?.teams.map((pt) => {
+                    const byDate = new Map(pt.days.map((d) => [d.date, d]));
+                    return (
+                      <div
+                        key={pt.team_id}
+                        className="grid grid-cols-[160px_repeat(7,minmax(0,1fr))] items-stretch gap-2 py-1"
+                      >
+                        <div className="flex min-w-0 flex-col justify-center">
+                          <p className="truncate text-sm font-medium">{pt.team_name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {pt.supervisor_name
+                              ? pt.supervisor_name
+                              : pt.kind === "track"
+                                ? "Crew template"
+                                : ""}
+                          </p>
+                        </div>
+                        {cols.map((col) => {
+                          const day = byDate.get(col);
+                          const type = day?.shift_type ?? null;
+                          const style = shiftCellStyle(type);
+                          const isCurrent =
+                            !!currentShift &&
+                            !!day &&
+                            pt.team_id === currentShift.team?.id &&
+                            col === currentShift.date;
+                          let label = "—";
+                          if (day && type) label = shiftTypeLetter(type);
+                          const hours =
+                            day && day.start && day.end ? `${day.start}–${day.end}` : "";
+                          return (
+                            <button
+                              key={col}
+                              type="button"
+                              disabled={!day}
+                              onClick={() => day && openCell(pt, day)}
+                              className={cn(
+                                "rounded-lg border px-2 py-2 text-center transition-colors",
+                                style.cell,
+                                col === today && "ring-1 ring-primary/40",
+                                isCurrent && "ring-2 ring-success",
+                                day
+                                  ? "hover:border-ring hover:shadow-sm"
+                                  : "cursor-default opacity-40 hover:shadow-none",
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "block truncate text-xs font-semibold",
+                                  day && type !== "off" && type !== null
+                                    ? style.text
+                                    : "text-muted-foreground",
+                                )}
+                              >
+                                {label}
+                                {day?.override_id ? (
+                                  <span className="ml-0.5 text-[9px] opacity-70" title="Overridden">
+                                    *
+                                  </span>
+                                ) : null}
+                              </span>
+                              {hours ? (
+                                <span className="block text-[11px] text-muted-foreground">
+                                  {hours}
+                                </span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {gridLegend.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  {gridLegend.map((entry) => (
+                    <span key={entry.letter} className="flex items-center gap-1.5">
+                      <span className={cn("inline-block size-2 rounded-full", entry.dot)} />
+                      <span className="font-semibold text-foreground">{entry.letter}</span>
+                      {entry.label}
+                      {entry.time ? `: ${entry.time}` : ""}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          )}
         </>
       )}
 

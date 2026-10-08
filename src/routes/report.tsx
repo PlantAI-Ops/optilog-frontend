@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { BadgeCheck, FileText, Share2 } from "lucide-react";
+import { BadgeCheck, FileText, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
+import { useApproveShiftReport, useShift } from "@/lib/hooks";
 import {
   approveReport,
   canLogShift,
@@ -17,7 +18,7 @@ export const Route = createFileRoute("/report")({
       { title: "Shift report — OptiLog" },
       {
         name: "description",
-        content: "Review, approve and share the generated shift report PDF.",
+        content: "Review and approve the generated shift report.",
       },
       { property: "og:title", content: "Shift report — OptiLog" },
       {
@@ -33,6 +34,25 @@ function ReportPage() {
   const state = useShiftLog();
   const navigate = useNavigate();
   const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
+  const shiftDetail = useShift(state.shiftId ?? undefined);
+  const approveShiftReport = useApproveShiftReport();
+  const [approveError, setApproveError] = useState<string | null>(null);
+  // Local flag right after the tap; the server copy (console, next session)
+  // keeps the badge honest afterwards.
+  const approved = state.reportApproved || !!shiftDetail.data?.report_approved_at;
+
+  const handleApprove = async () => {
+    setApproveError(null);
+    if (state.shiftId) {
+      try {
+        await approveShiftReport.mutateAsync({ shiftId: state.shiftId, approve: true });
+      } catch (err: unknown) {
+        setApproveError(err instanceof Error ? err.message : "Could not approve the report");
+        return;
+      }
+    }
+    approveReport();
+  };
 
   // Part of the voice logging flow — shift_manager+ belongs on the manager home.
   const canLog = canLogShift(state.user?.role);
@@ -64,30 +84,36 @@ function ReportPage() {
           ) : null}
           <p
             className={`mt-4 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-black ${
-              state.reportApproved ? "bg-success/20 text-success" : "bg-warning/20 text-warning"
+              approved ? "bg-success/20 text-success" : "bg-warning/20 text-warning"
             }`}
           >
             <BadgeCheck className="size-4" />
-            {state.reportApproved ? "Approved" : "Awaiting supervisor approval"}
+            {approved ? "Approved" : "Awaiting supervisor approval"}
           </p>
+          {approveError ? (
+            <p className="mt-3 rounded-xl bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
+              {approveError}
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-auto space-y-3">
-          {isSupervisor && !state.reportApproved ? (
+          {isSupervisor && !approved ? (
             <button
               type="button"
-              onClick={approveReport}
-              className="h-20 w-full rounded-3xl bg-primary text-xl font-black text-primary-foreground"
+              onClick={() => void handleApprove()}
+              disabled={approveShiftReport.isPending}
+              className="flex h-20 w-full items-center justify-center gap-2 rounded-3xl bg-primary text-xl font-black text-primary-foreground disabled:opacity-60"
             >
-              Approve report
+              {approveShiftReport.isPending ? (
+                <>
+                  <Loader2 className="size-5 animate-spin" /> Approving…
+                </>
+              ) : (
+                "Approve report"
+              )}
             </button>
           ) : null}
-          <button
-            type="button"
-            className="flex h-16 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-secondary text-lg font-bold"
-          >
-            <Share2 className="size-5" /> Share PDF
-          </button>
           <Link
             to="/timeline"
             className="flex h-14 w-full items-center justify-center rounded-2xl border border-border bg-card font-bold"
