@@ -145,6 +145,10 @@ const STALE_TIME = 30_000;
 export interface Plant {
   id: string;
   name: string;
+  /** Optional plant vocabulary fed to speech recognition (older backends omit it). */
+  industry?: string;
+  key_terms?: string[];
+  language_notes?: string;
 }
 
 export function usePlantSummary(plantId: string | undefined, date: string) {
@@ -213,8 +217,10 @@ export function useIncidents(plantId: string | undefined, status?: string) {
 export function useCreateRCAFromEvent() {
   const qc = useQueryClient();
   return useMutation({
+    // `RCACreate` has all-defaulted fields but FastAPI still requires the body
+    // object to be present — send `{}` explicitly (bare POST 422s).
     mutationFn: ({ eventId }: { eventId: string }) =>
-      api.post<RCARow>(`/rca/events/${eventId}/rca`),
+      api.post<RCARow>(`/rca/events/${eventId}/rca`, {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["dashboard", "incidents"] });
     },
@@ -710,9 +716,7 @@ export function useUpdateTeam() {
         .filter(([key]) => Array.isArray(key) && key[2] === "teams-detail");
       snapshots.forEach(([key]) => {
         qc.setQueryData(key, (old: TeamDetail[] | undefined) =>
-          Array.isArray(old)
-            ? old.map((t) => (t.id === teamId ? { ...t, ...patch } : t))
-            : old,
+          Array.isArray(old) ? old.map((t) => (t.id === teamId ? { ...t, ...patch } : t)) : old,
         );
       });
       return { snapshots };
@@ -802,6 +806,22 @@ export interface CurrentShiftResponse {
     date: string;
   } | null;
   lines: { id: string; name: string }[];
+  /** On-shift gate (ON_SHIFT_GATE_SPEC): this user's team covers the window
+   *  now. Absent on older backends -> treated as "no gate" (fail open). */
+  on_shift?: boolean;
+  /** Team's next scheduled shift while off-shift (null when none). */
+  next_shift?: {
+    shift_id: string;
+    shift_type: string;
+    name: string;
+    start: number | null;
+    end: number | null;
+    date: string;
+    status: string;
+  } | null;
+  /** Teams the rotation/docs put on shift now (every team when the plant
+   *  has no rotation config). */
+  teams_on_shift?: { id: string; name: string; supervisor_id: string | null }[];
 }
 
 export function useCurrentShift(plantId: string | undefined) {
@@ -810,6 +830,90 @@ export function useCurrentShift(plantId: string | undefined) {
     queryFn: () => api.get<CurrentShiftResponse>(`/plants/${plantId}/shifts/current`),
     enabled: !!plantId,
     staleTime: 60_000,
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/*                     off-shift approval (ON_SHIFT_GATE_SPEC)                 */
+/* -------------------------------------------------------------------------- */
+
+export type LoggingApprovalStatus = "pending" | "approved" | "denied" | "expired" | "used";
+
+export interface LoggingApproval {
+  id: string;
+  plant_id: string;
+  operator_id: string;
+  reason: string | null;
+  status: LoggingApprovalStatus;
+  requested_at: string;
+  expires_at: string;
+  approver_id: string | null;
+  approved_at?: string | null;
+  /* list (inbox) enrichments */
+  operator_name?: string;
+  approver_name?: string | null;
+}
+
+/**
+ * The caller's latest request (null = never asked). Polls every 4s while
+ * pending so the operator's start screen unlocks the moment a supervisor
+ * approves from their own device.
+ */
+export function useMyLoggingApproval(plantId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["logging-approval", "mine", plantId],
+    queryFn: () => api.get<LoggingApproval | null>(`/plants/${plantId}/logging-approvals/mine`),
+    enabled: !!plantId && enabled,
+    staleTime: 0,
+    refetchInterval: (query) => (query.state.data?.status === "pending" ? 4_000 : false),
+  });
+}
+
+/** Supervisor inbox: requests waiting for a decision on this plant. */
+export function usePendingLoggingApprovals(plantId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["logging-approval", "pending", plantId],
+    queryFn: () => api.get<LoggingApproval[]>(`/plants/${plantId}/logging-approvals/pending`),
+    enabled: !!plantId && enabled,
+    staleTime: 0,
+    refetchInterval: 8_000,
+  });
+}
+
+function useApprovalInvalidation() {
+  const queryClient = useQueryClient();
+  // Prefix key: matches both ["logging-approval","mine",...] and
+  // ["logging-approval","pending",...].
+  return () => queryClient.invalidateQueries({ queryKey: ["logging-approval"] });
+}
+
+/** Off-shift operator: ask the on-shift supervisor to unlock logging. */
+export function useCreateLoggingApproval(plantId: string | undefined) {
+  const invalidate = useApprovalInvalidation();
+  return useMutation({
+    mutationFn: (reason: string) =>
+      api.post<LoggingApproval>(`/plants/${plantId}/logging-approvals`, { reason }),
+    onSuccess: invalidate,
+  });
+}
+
+/** Supervisor: approve a request (unlocks the operator within ~4s). */
+export function useApproveLoggingApproval(plantId: string | undefined) {
+  const invalidate = useApprovalInvalidation();
+  return useMutation({
+    mutationFn: (approvalId: string) =>
+      api.post<LoggingApproval>(`/logging-approvals/${approvalId}/approve`),
+    onSuccess: invalidate,
+  });
+}
+
+/** Supervisor: decline a request. */
+export function useDenyLoggingApproval(plantId: string | undefined) {
+  const invalidate = useApprovalInvalidation();
+  return useMutation({
+    mutationFn: (approvalId: string) =>
+      api.post<LoggingApproval>(`/logging-approvals/${approvalId}/deny`),
+    onSuccess: invalidate,
   });
 }
 
@@ -852,21 +956,76 @@ export function useEventAudio(shiftId: string | undefined, eventId: string | und
   });
 }
 
+/* -------------------------------------------------------------------------- */
+/*                              voice recordings                               */
+/* -------------------------------------------------------------------------- */
+
+export interface RecordingInfo {
+  id: string;
+  /** pending → uploaded/transcribed → completed, or failed. */
+  status: string;
+  transcript: string | null;
+  /** ASR output kept once a human correction replaces it. */
+  transcript_original?: string | null;
+  error?: string | null;
+  duration?: number | null;
+  created_at?: string;
+}
+
+export function useRecording(recordingId: string | undefined) {
+  return useQuery({
+    queryKey: ["recording", recordingId],
+    queryFn: () => api.get<RecordingInfo>(`/recordings/${recordingId}`),
+    enabled: !!recordingId,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Replace a recording's transcript with the operator's correction; the ASR
+ * original survives as `transcript_original` and the diff becomes vocabulary.
+ */
+export function useFixTranscript(recordingId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (transcript: string) =>
+      api.patch<RecordingInfo>(`/recordings/${recordingId}/transcript`, { transcript }),
+    onSuccess: (updated) => {
+      qc.setQueryData(["recording", recordingId], updated);
+      qc.invalidateQueries({ queryKey: ["recording", recordingId] });
+    },
+  });
+}
+
+/**
+ * A suspected mis-transcription: ASR heard `heard` but thinks `corrected` is
+ * right. Tap the chip on the confirm screen to apply it to the transcript.
+ */
+export interface CorrectionSuggestion {
+  heard: string;
+  corrected: string;
+  confidence?: number;
+}
+
+export interface StructuredEvent {
+  event_type?: string;
+  observation?: string;
+  reported_cause?: string;
+  suspected_cause?: string;
+  verified_cause?: string;
+  action_taken?: string;
+  severity?: string;
+  status?: string;
+  asset_name?: string;
+  subsystem?: string;
+  duration_seconds?: number;
+  correction_suggestions?: CorrectionSuggestion[];
+}
+
 export interface TranscribeResult {
   transcript: string;
-  structured_event: {
-    event_type?: string;
-    observation?: string;
-    reported_cause?: string;
-    suspected_cause?: string;
-    verified_cause?: string;
-    action_taken?: string;
-    severity?: string;
-    status?: string;
-    asset_name?: string;
-    subsystem?: string;
-    duration_seconds?: number;
-  };
+  /** The model may return no structured event at all — guard before use. */
+  structured_event: StructuredEvent | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -934,6 +1093,9 @@ export interface MyEvent {
   source_record_id: string;
   evidence: any[];
   incident_id: string;
+  /** Owner of the event (absent on older backends -> no owner-based rights). */
+  operator_id?: string;
+  operator_name?: string;
 }
 
 export function useMyEvents(plantId: string | undefined, date: string, shiftId?: string) {
@@ -975,7 +1137,8 @@ export interface PlannedMaintenanceItem {
 export function usePlannedMaintenance(plantId: string | undefined, month: string) {
   return useQuery({
     queryKey: ["planned-maintenance", plantId, month],
-    queryFn: () => api.get<PlannedMaintenanceItem[]>(`/plants/${plantId}/planned-maintenance?month=${month}`),
+    queryFn: () =>
+      api.get<PlannedMaintenanceItem[]>(`/plants/${plantId}/planned-maintenance?month=${month}`),
     enabled: !!plantId,
     staleTime: STALE_TIME,
   });
@@ -1052,4 +1215,205 @@ export async function transcribeAudio(
   if (shiftId) formData.append("shift_id", shiftId);
   if (browserTranscript) formData.append("browser_transcript", browserTranscript);
   return postFormData<TranscribeResult>("/recordings/speech-to-text", formData);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                     shift detail + report approval                          */
+/* -------------------------------------------------------------------------- */
+
+export interface ShiftDetail {
+  id: string;
+  shift_type: string;
+  status: string;
+  planned_start?: string;
+  planned_end?: string;
+  actual_start?: string | null;
+  actual_end?: string | null;
+  team_name?: string;
+  /** Present once a supervisor approved the end-of-shift report. */
+  report_approved_at?: string | null;
+  report_approved_by?: string | null;
+  handover?: { notes?: string; open_issues?: string[] } | string | null;
+  summary?: { event_count?: number; open_issues?: number; downtime_seconds?: number };
+}
+
+/** GET /shifts/{id} — single shift (report approval state lives here). */
+export function useShift(shiftId: string | undefined) {
+  return useQuery({
+    queryKey: ["shift", shiftId],
+    queryFn: () => api.get<ShiftDetail>(`/shifts/${shiftId}`),
+    enabled: !!shiftId,
+    staleTime: 0,
+  });
+}
+
+export function useApproveShiftReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ shiftId, approve }: { shiftId: string; approve: boolean }) =>
+      api.post(`/shifts/${shiftId}/report/${approve ? "approve" : "unapprove"}`),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["shift", variables.shiftId] });
+      qc.invalidateQueries({ queryKey: ["report-approvals"] });
+    },
+  });
+}
+
+/** Shifts that ended and still need a supervisor to approve the report. */
+export interface ReportApprovalRow {
+  id: string;
+  shift_type: string;
+  date: string;
+  team_name: string;
+  status: string;
+  actual_end: string | null;
+  event_count: number;
+  open_issues: number;
+  handover_notes: string;
+  /** Set once a supervisor approved the report (null = still pending). */
+  report_approved_at?: string | null;
+  report_approved_by?: string | null;
+}
+
+export function useReportApprovals(plantId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["report-approvals", plantId],
+    queryFn: () => api.get<ReportApprovalRow[]>(`/plants/${plantId}/shifts/report-approvals`),
+    enabled: !!plantId && enabled,
+    staleTime: 0,
+    refetchInterval: 15_000,
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/*                        event review actions (Approvals)                     */
+/* -------------------------------------------------------------------------- */
+
+/** POST /events/{id}/confirm — draft -> confirmed (409 otherwise). */
+export function useConfirmEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId }: { eventId: string }) => api.post(`/events/${eventId}/confirm`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["dashboard", "events"] }),
+  });
+}
+
+/** POST /events/{id}/resolve — marks the issue handled. */
+export function useResolveEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId }: { eventId: string }) => api.post(`/events/${eventId}/resolve`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard", "events"] });
+      qc.invalidateQueries({ queryKey: ["planned-maintenance"] });
+    },
+  });
+}
+
+export interface ActionRow {
+  id: string;
+  event_id: string | null;
+  incident_id: string | null;
+  type: string;
+  description: string;
+  status: string;
+  due_date: string | null;
+}
+
+/** GET /actions?type=… — used to know which events were already pushed. */
+export function useActionsByType(plantId: string | undefined, type: string, enabled = true) {
+  return useQuery({
+    queryKey: ["actions", plantId, type],
+    queryFn: () =>
+      api.get<{ items: ActionRow[] } | ActionRow[]>(
+        `/actions?type=${encodeURIComponent(type)}&page_size=200`,
+      ),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/*                          ai vocabulary lessons                              */
+/* -------------------------------------------------------------------------- */
+
+export type AILessonStatus =
+  "suggested" | "auto_verified" | "verified" | "rejected" | "ineffective";
+
+export interface AILesson {
+  id: string;
+  plant_id?: string | null;
+  scope?: string;
+  kind: string;
+  trigger?: { text?: string } | null;
+  correction: string;
+  confidence?: number | null;
+  status: AILessonStatus | string;
+  source: string;
+  hits?: number;
+  recurrence_count?: number;
+  last_seen_at?: string | null;
+  verified_at?: string | null;
+}
+
+export interface AILessonPage {
+  items: AILesson[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+/** GET /plants/{id}/ai-lessons?status=… (supervisor+, desktop). */
+export function useAILessonsByStatus(
+  plantId: string | undefined,
+  status: AILessonStatus,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["ai-lessons", plantId, status],
+    queryFn: () =>
+      api.get<AILessonPage>(`/plants/${plantId}/ai-lessons?status=${status}&page_size=100`),
+    enabled: !!plantId && enabled,
+    staleTime: 30_000,
+  });
+}
+
+/** The review queue: lessons that entered the prompts, or fell out of them. */
+export function useLessonsToReview(plantId: string | undefined, enabled = true) {
+  const suggested = useAILessonsByStatus(plantId, "suggested", enabled);
+  const ineffective = useAILessonsByStatus(plantId, "ineffective", enabled);
+  return {
+    items: [...(suggested.data?.items ?? []), ...(ineffective.data?.items ?? [])],
+    total: (suggested.data?.total ?? 0) + (ineffective.data?.total ?? 0),
+    isLoading: suggested.isLoading || ineffective.isLoading,
+  };
+}
+
+/** POST /plants/{id}/ai-lessons — manual term/correction (applies immediately). */
+export function useAddAILesson(plantId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { kind: string; trigger?: string; correction: string }) =>
+      api.post<AILesson>(`/plants/${plantId}/ai-lessons`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-lessons", plantId] }),
+  });
+}
+
+/** POST /ai-lessons/{id}/verify — it immediately enters STT/LLM prompts. */
+export function useVerifyAILesson() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (lessonId: string) => api.post<AILesson>(`/ai-lessons/${lessonId}/verify`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-lessons"] }),
+  });
+}
+
+/** POST /ai-lessons/{id}/reject — terminal; only future evidence reopens it. */
+export function useRejectAILesson() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (lessonId: string) => api.post<AILesson>(`/ai-lessons/${lessonId}/reject`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-lessons"] }),
+  });
 }
