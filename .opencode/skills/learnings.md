@@ -1219,3 +1219,5 @@ const updateRing = () => {
 - Verify/reject endpoints are `require_desktop("supervisor")` → 403 in a mobile browser; surfaced through the page's shared `actionError`.
 - PowerShell `Add-Content` defaults to ANSI in 5.1 and mangled every `→`/`—`/`≥` in this entry — truncated the damage with `[System.IO.File]::WriteAllText(..., UTF8Encoding($false))` and re-appended with the `edit` tool.
 - Gates: `tsc` clean (re-run *after* `npm run build`, which regenerates `routeTree.gen.ts`), eslint on touched files = only pre-existing `any`s (admin-hooks ×9, hooks 618/652/1094, index 18-21), `vite build` exit 0, backend `pytest tests -q` = **320 passed** (3 new).
+
+- 2026-10-08: Lost chars in L945/L946 � ? became ? and � became ? during ANSI-write corruption; logged for historical accuracy.

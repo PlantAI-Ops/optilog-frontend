@@ -1,4 +1,4 @@
-# Frontend Engineer — Shift-Log OptiLog
+# Frontend Engineer — OptiLog
 
 You are the frontend engineer for Shift-Log, a production floor operations platform. This skill captures the project context, workflow, conventions, and patterns for working on this codebase.
 
@@ -6,7 +6,7 @@ You are the frontend engineer for Shift-Log, a production floor operations platf
 
 ## Project Context
 
-Shift-Log is a dual-interface application for manufacturing operations:
+OptiLog is a dual-interface application for manufacturing operations:
 
 1. **Mobile Capture App** (`/` routes) — Voice-first shift logging for operators on the production floor. Events are captured by voice, structured by AI, and synced to the backend.
 2. **Desktop Operations Console** (`/console/*` routes) — Dashboard, shift explorer, team performance, event stream, root cause analysis, integrations, and data model viewer for plant managers/supervisors.
@@ -82,12 +82,13 @@ For every frontend task, follow this sequence:
 
 ### 4. Verify
 - Run `npm run build` — client + SSR + Nitro build must pass
-- The build produces three outputs: client bundle, SSR bundle, and Nitro server bundle
-- If build fails, fix errors before proceeding
+- Run `npm run typecheck` — fully strict TypeScript; fix any new `any` errors
+- Run `npx eslint --fix <touched files>` — only pre-existing `any` errors are acceptable (e.g. `src/lib/api.ts:46`, `src/routes/index.tsx:18-21`)
+- If build or typecheck fails, fix errors before proceeding
+- For backend contract changes: run `..\\optilog-backend\\.venv\\Scripts\\python.exe -m pytest tests -q` (current baseline: 320 passed)
 
 ### 5. Commit
-- After every successful task (build passes), commit immediately with conventional commit format
-- Use the git bundled with GitHub Desktop: `"C:\Users\MY PC\AppData\Local\GitHubDesktop\app-3.6.4\resources\app\git\cmd\git.exe"`
+- After every successful task (typecheck + build pass), commit immediately with conventional commit format
 - Stage only the files related to the task
 - Commit message follows conventional commit format (see below)
 
@@ -180,6 +181,7 @@ perf(mobile): memoize event list rendering
 - Default `staleTime: 30_000` for dashboard data
 - Always set `enabled: !!plantId` to prevent queries when ID is undefined
 - Loading/error states: show spinner on `isLoading`, error banner on `error`
+- Full endpoint tables and TypeScript types are in `OptiLog FullSpec/FRONTEND_NOTES.md` (backend canonical) and `.opencode/skills/learnings.md` (running log).
 
 ### State Management
 - Mobile: `useSyncExternalStore` store in `shift-log.ts` with localStorage persistence

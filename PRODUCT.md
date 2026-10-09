@@ -42,9 +42,9 @@ Positioning line already used in the product: "Operational Record & Intelligence
 
 **Shipped surfaces (routes in this repo):**
 
-- **Operator capture flow** (`/`, `/timeline`, `/end-shift`, `/report`): login, start shift with line selection and carryover issues, one-tap voice recording with transcription, a compact confirm/edit/clarify card, chronological shift timeline with expandable entries and pending-sync badges, end-of-shift summary/handover, shift report view.
-- **Operations Console** (`/console/*`): plant dashboard (achievement, downtime, active issues, RCA pending), operational event stream, shift explorer, calendar, team performance, planned maintenance, RCA workspace, integrations hub ("OptiLog Connect"), canonical data model reference.
-- **Admin console** (`/console/admin/*`): tenant list/create, tenant detail with users and plants, 6-step plant onboarding wizard (plant details → areas → lines → teams → seed/skip/setup → review, resumable via `localStorage` key `optilog.onboarding.v1` with 24h TTL), and user invitations (form or CSV upload).
+- **Operator capture flow** (`/`, `/timeline`, `/end-shift`, `/report`): login, start shift with line selection and carryover issues, one-tap voice recording linked to each event (playback, Original ASR, Fix-transcript), `correction_suggestions` chips, `{Name}, {Shift}` greeting, a compact confirm/edit/clarify card, chronological shift timeline with expandable entries and pending-sync badges, end-of-shift summary/handover, shift report view, resume from ended shift.
+- **Operations Console** (`/console/*`): plant dashboard (achievement, downtime, active issues, RCA pending), operational event stream, shift explorer, **Approvals** (shift-report approvals + AI-lesson vocabulary review, pending-sync badge), **Schedule** (weekly grid + month view), **Layout**, **System Admin** console, team performance, planned maintenance, RCA workspace, integrations hub ("OptiLog Connect"), canonical data model reference.
+- **Admin console** (`/console/admin/*`): tenant list/create, tenant detail with users and plants, 6-step plant onboarding wizard (plant details → areas → lines → teams → seed/skip/setup → review, resumable via `localStorage` key `optilog.onboarding.v1` with 24h TTL), and user invitations (form or CSV upload). The wizard now collects `industry` (≤120 chars), `key_terms` (≤50 domain words), `language_notes` (≤500 chars) on create/update — feeding STT/extraction prompts and seeding AI lessons. The `system admin` console (`/console/admin/system/*`) manages user/team/plant assignments, feature flags, and CSV invitations.
 - **Invitation acceptance** (`/invite/:token`): public, no auth; fetch info, accept with name + password, then store tokens.
 
 **Constraints and rules future work must preserve:**
@@ -52,13 +52,13 @@ Positioning line already used in the product: "Operational Record & Intelligence
 - Offline-first capture is a hard requirement: events persist locally before any network call, carry a `pending`/`synced` state, retry silently, and must never be lost to a dropped connection, app kill, or restart.
 - Observation / reported cause / verified cause must stay visibly distinct, even in the compact confirmation card.
 - Authorization is enforced by the backend; the UI must not expose actions a role cannot perform.
-- The frontend does not own the event model but must render and lightly edit it: `event_type`, `asset`, `subsystem`, `timestamp`, `duration_minutes`, `observation`, `reported_cause`, `verified_cause`, `action_taken`, `status`, `source`, `confidence`.
+- The frontend does not own the event model but must render and lightly edit it: `event_type`, `asset`, `subsystem`, `timestamp`, `duration_minutes`, `observation`, `reported_cause`, `verified_cause`, `action_taken`, `severity`, `suspected_cause`, `status`, `source`, `confidence`, `transcript`, `recording_id`.
 - The app talks only to the backend — no direct machine/PLC/SCADA interaction.
 - This repo is a **web** product; the Flutter mobile PRD in `README.md` is legacy context, not a second codebase. Its floor-condition requirements still describe how operators actually use the product.
 
 **Open decisions (recorded, not invented):**
 
-- Whether multi-language voice input ships (flagged as V2 in the legacy PRD) — undecided.
+- Plant-level `language_notes` now ships as transcription-prompt hints (e.g. mixed-language floors); multi-language STT itself remains V2/undecided.
 - Whether a native mobile app accompanies the web app — undecided; the web app is the product today.
 - Report template configuration stays an admin/backend concern; the frontend only triggers and displays reports.
 
@@ -73,9 +73,9 @@ Positioning line already used in the product: "Operational Record & Intelligence
 ## Evidence on Hand
 
 - `README.md` — the original Shift-Log mobile PRD: purpose, floor conditions, core operator journey, event data model rules, offline requirements, supervisor requirements, MVP scope. Legacy as to platform; authoritative as to floor context and capture rules.
-- `notes/FRONTEND_NOTES.md` — full API endpoint tables, TypeScript types, React Query hook patterns, error-code handling, and a dated changelog (source of truth for frontend/backend sync).
-- `notes/BACKEND_NOTES.md` — onboarding wizard flow, step-by-step payloads, validation rules, localStorage resume shape.
-- `notes/ADMIN_API_DOCUMENTATION.md`, `notes/SHIFT_CONFIG_BACKEND_GUIDE.md` — admin endpoints and shift-configuration backend behavior.
+- `OptiLog FullSpec/FRONTEND_NOTES.md` — full API endpoint tables, TypeScript types, React Query hook patterns, error-code handling, and a dated changelog (source of truth for frontend/backend sync; backend repo canonical at `..\optilog-backend\notes\FRONTEND_NOTES.md`).
+- `OptiLog FullSpec/BACKEND_NOTES.md` — onboarding wizard flow, step-by-step payloads, validation rules, localStorage resume shape + 2026-10-08 plant-field docs (industry/key_terms/language_notes).
+- `OptiLog FullSpec/ADMIN_API_DOCUMENTATION.md`, `OptiLog FullSpec/SHIFT_CONFIG_BACKEND_GUIDE.md` — admin endpoints and shift-configuration backend behavior.
 - `src/routes/**`, `src/components/**`, `src/lib/**` — the shipped interface itself, the incumbent implementation of every claim above.
 - The login form starts empty — no credentials are pre-filled.
 - **Absences that future work must not fabricate:** no customer logos, testimonials, case studies, press, pricing, or published benchmarks exist in this repo. No analytics/charts claims beyond what the dashboard actually renders.
