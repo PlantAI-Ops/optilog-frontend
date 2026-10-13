@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { CloudOff, CloudUpload, LogOut, Monitor, Wifi, WifiOff, ChevronLeft } from "lucide-react";
 import { canLogShift, logout, pendingCount, setOnline, useShiftLog } from "@/lib/shift-log";
 
@@ -17,6 +18,7 @@ export function AppShell({
 }) {
   const state = useShiftLog();
   const pending = pendingCount(state);
+  const queryClient = useQueryClient();
   // Pending-sync badge and the offline simulator only make sense for the
   // voice logging flow — shift_manager+ (manager home) never logs.
   const canLog = canLogShift(state.user?.role);
@@ -75,7 +77,12 @@ export function AppShell({
           {showSessionActions ? (
             <button
               type="button"
-              onClick={logout}
+              onClick={() => {
+                // Drop cached server state too — it is scoped to the previous
+                // operator's session (shift, carried-over, my-events…).
+                queryClient.clear();
+                logout();
+              }}
               aria-label="Sign out"
               className="flex size-11 items-center justify-center rounded-xl border border-border bg-secondary text-secondary-foreground"
             >

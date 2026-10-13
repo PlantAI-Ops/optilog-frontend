@@ -56,7 +56,10 @@ function TimelinePage() {
 
   const plantId = state.user?.plant_ids?.[0];
   const today = new Date().toISOString().slice(0, 10);
-  const myEvents = useMyEvents(plantId, today);
+  // Scoped to the active shift: without shift_id the API returns every event
+  // the operator logged today, so an earlier shift's issues would reappear
+  // on this shift's timeline after a re-login.
+  const myEvents = useMyEvents(plantId, today, state.shiftId ?? undefined);
 
   useEffect(() => {
     if (myEvents.data) {

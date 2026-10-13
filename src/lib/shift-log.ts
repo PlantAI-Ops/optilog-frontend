@@ -100,6 +100,9 @@ export interface ShiftEvent {
   area_id?: string | null;
   /** Owner of the event server-side — gates edit/delete for non-supervisors. */
   operator_id?: string | null;
+  /** Shift the event belongs to (server-stamped). Used to keep merges scoped
+   *  to the active shift so another shift's events cannot leak in. */
+  shift_id?: string | null;
 }
 
 export interface User {
@@ -344,17 +347,28 @@ export function getRestoreSessionPromise(): Promise<void> {
 
 export function logout() {
   clearToken();
+  // Full session reset: anything scoped to the operator/shift (line, area,
+  // team, carried-over list, events…) must not survive into the next login —
+  // a different user may pick up this device.
   setState({
     user: null,
     shiftActive: false,
     shiftId: null,
+    shiftName: "Morning",
     shiftType: null,
+    lineId: null,
+    line: "Packaging Line 2",
+    areaId: null,
+    area: "",
+    teamId: null,
+    teamName: null,
     startedAt: null,
     endedAt: null,
     events: [],
     deletedIds: [],
     pendingDeletes: [],
     windowEnd: null,
+    carriedOver: [],
     handover: "",
     reportApproved: false,
     error: null,
@@ -478,6 +492,7 @@ export async function addEvent(event: ShiftEvent): Promise<string | null> {
   const owned: ShiftEvent = {
     ...event,
     operator_id: event.operator_id ?? state.user?.id ?? null,
+    shift_id: event.shift_id ?? state.shiftId,
   };
   setState((s) => ({ events: [...s.events, owned] }));
   if (!state.shiftId || !state.online) return null;
@@ -667,6 +682,7 @@ export function mapMyEventToShiftEvent(e: MyEvent): ShiftEvent {
     sync: "synced",
     logged_by: e.operator_name ?? "",
     operator_id: e.operator_id ?? null,
+    shift_id: e.shift_id ?? null,
     // The server keeps the audio link in `source.record_id`; mirroring it here
     // is what lets the timeline play the recording back.
     recording_id: e.source_record_id || undefined,
@@ -682,7 +698,11 @@ export function mergeEvents(serverEvents: MyEvent[]) {
       (ev) =>
         !localIds.has(ev.id) &&
         !deleted.has(ev.id) &&
-        (ev.status as unknown as string) !== "deleted",
+        (ev.status as unknown as string) !== "deleted" &&
+        // Shift-scoped: while a shift is active, never pull in events that
+        // belong to another shift (e.g. the same operator on an earlier shift
+        // the same day). Events without a shift_id (older backends) still pass.
+        (!s.shiftId || !ev.shift_id || ev.shift_id === s.shiftId),
     );
     if (newEvents.length === 0) return s;
     return { events: [...s.events, ...newEvents] };
@@ -692,9 +712,16 @@ export function mergeEvents(serverEvents: MyEvent[]) {
 async function fetchEventsFromServer(user: User) {
   const plantId = user.plant_ids?.[0];
   if (!plantId) return;
+  // Only pre-load events once a shift is active — and only that shift's
+  // events. Merging "everything today" here is what leaked a previous
+  // shift's issues into a new session (same operator, same date).
+  const shiftId = state.shiftId;
+  if (!shiftId) return;
   const today = new Date().toISOString().slice(0, 10);
   try {
-    const events = await api.get<MyEvent[]>(`/plants/${plantId}/my-events?date=${today}`);
+    const events = await api.get<MyEvent[]>(
+      `/plants/${plantId}/my-events?date=${today}&shift_id=${shiftId}`,
+    );
     mergeEvents(events);
   } catch {
     /* non-critical — events will load on timeline navigation */

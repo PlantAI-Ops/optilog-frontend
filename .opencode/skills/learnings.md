@@ -1220,4 +1220,24 @@ const updateRing = () => {
 - PowerShell `Add-Content` defaults to ANSI in 5.1 and mangled every `→`/`—`/`≥` in this entry — truncated the damage with `[System.IO.File]::WriteAllText(..., UTF8Encoding($false))` and re-appended with the `edit` tool.
 - Gates: `tsc` clean (re-run *after* `npm run build`, which regenerates `routeTree.gen.ts`), eslint on touched files = only pre-existing `any`s (admin-hooks ×9, hooks 618/652/1094, index 18-21), `vite build` exit 0, backend `pytest tests -q` = **320 passed** (3 new).
 
-- 2026-10-08: Lost chars in L945/L946 � ? became ? and � became ? during ANSI-write corruption; logged for historical accuracy.
+- 2026-10-08: Lost chars in L945/L946 � ? became ? and � became ? during ANSI-write corruption; logged for historical accuracy.
+
+---
+
+## 2026-10-13: Shift-scoped my-events — another shift's issues leaking into a new session
+
+**Report:** Operator 5 (shift A) logged 4 issues; the same operator logged in again on shift B (same date) and the mobile timeline still showed shift A's 4 issues.
+
+**Root cause:** `GET /plants/{id}/my-events` was called date-only (no `shift_id`) from two places — `fetchEventsFromServer` on login/restore (`shift-log.ts`) and `useMyEvents` on the timeline (`timeline.tsx`) — and `mergeEvents` blindly appended whatever came back. The backend without `shift_id` resolves "the caller's team's current-or-next shift", which can be the *previous* shift (e.g. right at a shift boundary) or fall back to **all plant events for the date** when no team/shift is found. Same operator + same date → the old shift's events reappeared. The local `ShiftEvent` type didn't carry `shift_id` at all (the server field was dropped in `mapMyEventToShiftEvent`), so nothing downstream could tell which shift an event belonged to.
+
+**Fix (frontend only — the backend already supported the `shift_id` param; verified `get_my_events` in `dashboard/service.py:1387` exact-matches it):**
+- `useMyEvents(plantId, date, shiftId?)` already existed but no caller ever passed `shiftId` — the timeline now passes `state.shiftId`.
+- `fetchEventsFromServer` now appends `&shift_id=${state.shiftId}` and **skips entirely when no shift is active** (login happens *before* the start screen; `handleStart` already resets `events: []`, and the timeline fetch loads shift-scoped events once logging starts).
+- `ShiftEvent` gained `shift_id?: string | null`; `mapMyEventToShiftEvent` maps the server field; `addEvent` stamps it at capture time; `mergeEvents` filters out events whose `shift_id` differs from `state.shiftId` while a shift is active (events without a `shift_id` — older backends — still pass, fail-open).
+- Mobile `logout()` was an incomplete reset (missed `shiftName`, line/area/team, `carriedOver`) — it now resets every session-scoped field to its `initialState` value.
+- Mobile sign-out (`AppShell`, `ManagerHome`) now calls `queryClient.clear()` before `logout()` — React Query keys (`current-shift`, `carried-over`, `my-events`…) are plant-scoped, not user-scoped, and survived a soft logout.
+
+**Gotchas / notes:**
+- Backend `get_my_events` with `shift_id` filters by that shift **only** (not by user — the mobile timeline is meant to show the whole shift's events); without it, team → current/next-shift resolution may fall back to a date-wide plant query. So the frontend must always pass `shift_id` once a shift is active.
+- This also fixes the no-logout variant: same-session shift rollover (start shift B after shift A) previously re-merged shift A's events via the date-only timeline fetch.
+- Gates: `tsc` clean, eslint on touched files clean, `vite build` exit 0. Backend contract unchanged (no backend tests needed).

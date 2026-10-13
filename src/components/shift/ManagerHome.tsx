@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { Monitor, LogOut } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { useShiftsNow } from "@/lib/hooks";
@@ -16,6 +17,7 @@ export function ManagerHome() {
   const user = state.user;
   const plantId = user?.plant_ids?.[0];
   const now = useShiftsNow(plantId);
+  const queryClient = useQueryClient();
 
   if (!user) return null;
 
@@ -74,7 +76,10 @@ export function ManagerHome() {
           </Link>
           <button
             type="button"
-            onClick={logout}
+            onClick={() => {
+              queryClient.clear();
+              logout();
+            }}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-secondary text-base font-bold text-secondary-foreground"
           >
             <LogOut className="size-4" /> Sign out
