@@ -661,6 +661,21 @@ export function unresolvedCount(s: ShiftState) {
   return s.events.filter((e) => e.status !== "resolved").length;
 }
 
+/**
+ * "Bagging Area · Line 3" — where the operator is logging, for the shift
+ * headers. The area picked on the start screen comes first; the line only
+ * joins when one was actually chosen (`line` falls back to the literal
+ * "Unassigned" when the picked area has no lines, which must not leak in).
+ * Renders "Unassigned" when neither is known.
+ */
+export function locationLabel(s: Pick<ShiftState, "area" | "line">): string {
+  const parts = [s.area?.trim(), s.line?.trim()].filter(
+    (p): p is string => !!p && p !== "Unassigned",
+  );
+  const unique = parts.filter((p, i) => parts.indexOf(p) === i);
+  return unique.length ? unique.join(" · ") : "Unassigned";
+}
+
 export function mapMyEventToShiftEvent(e: MyEvent): ShiftEvent {
   return {
     id: e.id,

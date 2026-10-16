@@ -75,6 +75,7 @@ import {
   blankEvent,
   canLogShift,
   hasMinRole,
+  locationLabel,
   login,
   setState,
   startLoggingSession,
@@ -665,7 +666,7 @@ function ShiftEndedScreen() {
               ? formatTime(state.endedAt, { hour: "2-digit", minute: "2-digit", hour12: false })
               : ""}
             {" · "}
-            {state.shiftName || "Shift"} · {state.line || "Unassigned"}
+            {state.shiftName || "Shift"} · {locationLabel(state)}
           </p>
         </div>
 
@@ -1245,7 +1246,7 @@ function RecordScreen() {
   const shiftWord = shiftLabel(state.shiftType) ?? state.shiftName;
 
   return (
-    <AppShell title={`${who}, ${shiftWord} · ${state.line}`}>
+    <AppShell title={`${who}, ${shiftWord} · ${locationLabel(state)}`}>
       <div className="flex flex-1 flex-col items-center justify-between gap-6 py-2">
         <div className="grid w-full grid-cols-2 gap-3">
           <Stat value={state.events.length} label="events recorded" />

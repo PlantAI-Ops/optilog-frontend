@@ -15,6 +15,7 @@ import {
   deleteEvent,
   formatTime,
   hasMinRole,
+  locationLabel,
   mergeEvents,
   saveEvent,
   unresolvedCount,
@@ -115,7 +116,7 @@ function TimelinePage() {
     : null;
 
   return (
-    <AppShell title={`${state.shiftName} · ${state.line}`}>
+    <AppShell title={`${state.shiftName} · ${locationLabel(state)}`}>
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-black">Shift timeline</h1>

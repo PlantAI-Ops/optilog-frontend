@@ -1241,3 +1241,31 @@ const updateRing = () => {
 - Backend `get_my_events` with `shift_id` filters by that shift **only** (not by user — the mobile timeline is meant to show the whole shift's events); without it, team → current/next-shift resolution may fall back to a date-wide plant query. So the frontend must always pass `shift_id` once a shift is active.
 - This also fixes the no-logout variant: same-session shift rollover (start shift B after shift A) previously re-merged shift A's events via the date-only timeline fetch.
 - Gates: `tsc` clean, eslint on touched files clean, `vite build` exit 0. Backend contract unchanged (no backend tests needed).
+
+---
+
+## 2026-10-16: Approvals queue never filled (shift never closes) + `Area · Line` headers
+
+**Report:** (1) an operator's End Shift never produced a row in Console → Approvals → Shift reports; (2) the mobile header read `Operator Six, Morning · Unassigned` even after picking an area.
+
+**Root causes (three stacked, backend):**
+- `POST /shifts/{shift_id}/end` only stamps `operator_shifts.ended_at` (the session) — the shift doc keeps `status:"scheduled"` and `actual_end: null` forever. Nothing else ever closed it.
+- The worker `check_expired_shifts` only matched `status:"active"`, and the 100 shifts in the live DB are all `scheduled`/`pending` — **no console UI calls `POST /shifts/{id}/start`**, so nothing ever activates them. The close query matched zero docs for the life of the product.
+- `get_report_approvals` required `actual_end`/`closed`/`handed_over` — so a handed-over-but-still-open session could never surface either.
+
+**Fixes (backend `optilog-backend`):**
+- `app/workers/shift_activator.py`: new activation pass *before* the close pass — `status:"scheduled"` + `planned_start <= now` → `status:"active"`, `actual_start = planned_start` (backdated so a window opened at 06:00 reads the same whether the worker noticed at 06:00 or 06:45). Close pass unchanged; `close_shift` still requires `active|handed_over` (deliberately **not** relaxed — the activation pass runs first in the same tick). `pending` (team-less placeholder) shifts are left alone.
+- `get_report_approvals`: collects handed-over ids from `operator_shifts` (`ended_at != None`, desc, limit 500) into the `$or`; live event stats via a plain `find` (excludes `status:"deleted"`, `open_issues` = `confirmed|investigating`); session rollup → `sessions_open`/`sessions_ended`/`handovers` notes; new row fields `still_running` (no `actual_end` and not closed) + `handed_over_at`; live `event_count`/`open_issues` win over the stale `summary` snapshot; empty rows (0 events, no notes, no `report_approved_at`) are filtered out so a 71-shift catch-up close doesn't flood the queue.
+- Tests in `tests/api/test_shift_lifecycle_and_approvals.py`: 2 seeded with events, 3 new (handed-over-running row, nothing-to-approve filter, activate-then-close worker). `pytest tests -q` = **323 passed**.
+
+**Fixes (frontend):**
+- `ReportApprovalRow` += `still_running?`/`handed_over_at?`/`sessions_open?`/`sessions_ended?`; `approvals.tsx` shows `endedAt = actual_end ?? handed_over_at`, a `handed over · shift still running` warning line, `N of M handed over` under the time when sessions remain, and updated column/empty-state copy.
+- `locationLabel({area, line})` in `shift-log.ts` → `Area · Line` (drops blanks + the literal `"Unassigned"` placeholder, dedupes, falls back to `Unassigned`); applied at all four header sites: record (`index.tsx`), ended screen (`index.tsx`), `timeline.tsx`, `report.tsx`. `state.area` was written at capture but read nowhere.
+
+**Verified live (read-only scripts against the real Atlas DB):** the running backend picked up the reload — 71 orphans now `closed`, 13 in-window `active`, 11 future `scheduled`, 5 `pending` untouched, 0 expired-open; queue returns the Oct-14 test shift (3 events / 2 open, handover note) + 3 older unapproved rows + 1 `pending` row with a handover note.
+
+**Gotchas:**
+- The first worker tick force-ends dangling sessions on expired shifts with `ended_at = now` (catch-up artifact — handover timestamps show today, not the original day). Hidden by the empty-row filter, but `status`/`actual_start`/`actual_end` on ~71 docs do change. Approved-mid-window rows stay approved if the operator resumes.
+- Frontend `.env` points at `http://localhost:8000/api/v1`; the dev backend runs with `--reload`, so file edits go live on the next 60s worker tick — verify with read-only `get_report_approvals` scripts rather than restarting servers.
+- Two stale open sessions remain on old `pending` shifts (never activated → never force-ended); out of scope until `pending` shifts get lifecycle rules.
+- Gates: `npm run typecheck` clean, `npx eslint --fix` on touched files → only pre-existing `any`s (hooks 618/652/1094, index 18-21), `npm run build` exit 0.
