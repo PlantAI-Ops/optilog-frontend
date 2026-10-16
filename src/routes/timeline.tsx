@@ -15,6 +15,7 @@ import {
   deleteEvent,
   formatTime,
   hasMinRole,
+  locationLabel,
   mergeEvents,
   saveEvent,
   unresolvedCount,
@@ -56,7 +57,10 @@ function TimelinePage() {
 
   const plantId = state.user?.plant_ids?.[0];
   const today = new Date().toISOString().slice(0, 10);
-  const myEvents = useMyEvents(plantId, today);
+  // Scoped to the active shift: without shift_id the API returns every event
+  // the operator logged today, so an earlier shift's issues would reappear
+  // on this shift's timeline after a re-login.
+  const myEvents = useMyEvents(plantId, today, state.shiftId ?? undefined);
 
   useEffect(() => {
     if (myEvents.data) {
@@ -112,7 +116,7 @@ function TimelinePage() {
     : null;
 
   return (
-    <AppShell title={`${state.shiftName} · ${state.line}`}>
+    <AppShell title={`${state.shiftName} · ${locationLabel(state)}`}>
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-black">Shift timeline</h1>

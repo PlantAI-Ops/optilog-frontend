@@ -148,7 +148,9 @@ function ApprovalsPage() {
         <StatCard
           label="Shift reports pending"
           value={pendingReports.length}
-          hint={reportRows.length ? "Ended shifts awaiting sign-off" : "No ended shifts yet"}
+          hint={
+            reportRows.length ? "Handed over / ended, awaiting sign-off" : "Nothing waiting yet"
+          }
           tone={pendingReports.length ? "warning" : "default"}
         />
         <StatCard
@@ -187,7 +189,7 @@ function ApprovalsPage() {
           </div>
         ) : reportRows.length === 0 ? (
           <p className="mt-3 rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            No shifts have ended yet today.
+            No shift reports waiting — no one has handed over yet.
           </p>
         ) : (
           <div className="mt-3 overflow-hidden rounded-xl border border-border bg-card">
@@ -196,7 +198,7 @@ function ApprovalsPage() {
                 <tr className="border-b border-border">
                   <th className="px-4 py-2 text-left font-medium">Shift</th>
                   <th className="px-4 py-2 text-left font-medium">Team</th>
-                  <th className="px-4 py-2 text-left font-medium">Ended</th>
+                  <th className="px-4 py-2 text-left font-medium">Ended / handed over</th>
                   <th className="px-4 py-2 text-left font-medium">Events / open</th>
                   <th className="px-4 py-2 text-left font-medium">Handover</th>
                   <th className="px-4 py-2 text-right font-medium">Decision</th>
@@ -205,17 +207,30 @@ function ApprovalsPage() {
               <tbody>
                 {reportRows.map((r) => {
                   const approved = !!r.report_approved_at;
+                  const endedAt = r.actual_end ?? r.handed_over_at;
+                  const handedTotal = (r.sessions_ended ?? 0) + (r.sessions_open ?? 0);
                   return (
                     <tr key={r.id} className="border-b border-border/60 align-top">
                       <td className="px-4 py-3 font-medium capitalize">
                         {r.shift_type} · {r.date}
                         <p className="mt-0.5 text-xs font-normal capitalize text-muted-foreground">
-                          {r.status.replace(/_/g, " ")}
+                          {r.still_running ? (
+                            <span className="font-medium text-warning">
+                              handed over · shift still running
+                            </span>
+                          ) : (
+                            r.status.replace(/_/g, " ")
+                          )}
                         </p>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{r.team_name || "—"}</td>
                       <td className="px-4 py-3 tabular-nums text-muted-foreground">
-                        {r.actual_end ? r.actual_end.slice(11, 16) : "—"}
+                        {endedAt ? endedAt.slice(11, 16) : "—"}
+                        {r.sessions_open ? (
+                          <span className="block text-xs font-normal">
+                            {r.sessions_ended ?? 0} of {handedTotal} handed over
+                          </span>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 tabular-nums">
                         {r.event_count} / {r.open_issues} open

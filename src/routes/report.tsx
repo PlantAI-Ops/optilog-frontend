@@ -8,6 +8,7 @@ import {
   canLogShift,
   formatTime,
   hasMinRole,
+  locationLabel,
   unresolvedCount,
   useShiftLog,
 } from "@/lib/shift-log";
@@ -67,7 +68,7 @@ function ReportPage() {
         <div className="rounded-2xl border border-border bg-card p-5">
           <FileText className="size-10 text-primary" />
           <h1 className="mt-3 text-2xl font-black leading-tight">
-            {state.shiftName} shift — {state.line}
+            {state.shiftName} shift — {locationLabel(state)}
           </h1>
           <p className="text-base text-muted-foreground">
             {state.startedAt ? formatTime(state.startedAt) : "—"} to{" "}
