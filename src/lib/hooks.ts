@@ -1259,7 +1259,8 @@ export function useApproveShiftReport() {
   });
 }
 
-/** Shifts that ended and still need a supervisor to approve the report. */
+/** Shifts whose report a supervisor still owes a decision on — ended docs plus
+ * shifts that merely *handed over* while the window is running (`still_running`). */
 export interface ReportApprovalRow {
   id: string;
   shift_type: string;
@@ -1273,6 +1274,12 @@ export interface ReportApprovalRow {
   /** Set once a supervisor approved the report (null = still pending). */
   report_approved_at?: string | null;
   report_approved_by?: string | null;
+  /** Shift doc has not closed yet — handover in, window still running. */
+  still_running?: boolean;
+  /** When the last operator session ended (rows still running have no `actual_end`). */
+  handed_over_at?: string | null;
+  sessions_open?: number;
+  sessions_ended?: number;
 }
 
 export function useReportApprovals(plantId: string | undefined, enabled = true) {
