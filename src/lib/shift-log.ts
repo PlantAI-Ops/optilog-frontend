@@ -98,6 +98,9 @@ export interface ShiftEvent {
   /** Plant line/area the operator selected before logging (persisted server-side). */
   line_id?: string | null;
   area_id?: string | null;
+  /** Display names for the timeline cards (stamped at capture, filled by merges). */
+  line_name?: string | undefined;
+  area_name?: string | undefined;
   /** Owner of the event server-side — gates edit/delete for non-supervisors. */
   operator_id?: string | null;
   /** Shift the event belongs to (server-stamped). Used to keep merges scoped
@@ -488,11 +491,16 @@ export async function endShift(handover: string): Promise<void> {
  */
 export async function addEvent(event: ShiftEvent): Promise<string | null> {
   // Stamp ownership at capture time so edit/delete rights can be evaluated
-  // even before the server echoes its copy back.
+  // even before the server echoes its copy back. Location display names come
+  // from the shift's picks so every card can show area · line immediately.
   const owned: ShiftEvent = {
     ...event,
     operator_id: event.operator_id ?? state.user?.id ?? null,
     shift_id: event.shift_id ?? state.shiftId,
+    line_id: event.line_id ?? state.lineId,
+    area_id: event.area_id ?? state.areaId,
+    line_name: event.line_name ?? pickName(state.line),
+    area_name: event.area_name ?? pickName(state.area),
   };
   setState((s) => ({ events: [...s.events, owned] }));
   if (!state.shiftId || !state.online) return null;
@@ -676,6 +684,12 @@ export function locationLabel(s: Pick<ShiftState, "area" | "line">): string {
   return unique.length ? unique.join(" · ") : "Unassigned";
 }
 
+/** A display name worth stamping on an event (drops the "Unassigned" stub). */
+function pickName(name: string | null | undefined): string | undefined {
+  const value = name?.trim();
+  return value && value !== "Unassigned" ? value : undefined;
+}
+
 export function mapMyEventToShiftEvent(e: MyEvent): ShiftEvent {
   return {
     id: e.id,
@@ -698,6 +712,10 @@ export function mapMyEventToShiftEvent(e: MyEvent): ShiftEvent {
     logged_by: e.operator_name ?? "",
     operator_id: e.operator_id ?? null,
     shift_id: e.shift_id ?? null,
+    line_id: e.line_id || null,
+    area_id: e.area_id ?? null,
+    line_name: e.line_name || "",
+    area_name: e.area_name ?? "",
     // The server keeps the audio link in `source.record_id`; mirroring it here
     // is what lets the timeline play the recording back.
     recording_id: e.source_record_id || undefined,
