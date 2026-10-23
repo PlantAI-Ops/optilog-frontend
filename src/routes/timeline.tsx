@@ -52,6 +52,8 @@ function TimelinePage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
   const userId = state.user?.id ?? null;
+  /** Who the list shows: mine / my line / the whole shift. */
+  const [scope, setScope] = useState<"mine" | "line" | "all">(isSupervisor ? "all" : "mine");
   const planMaintenance = usePlanMaintenance();
   const shiftWindow = useShiftWindow(state.windowEnd);
 
@@ -115,14 +117,54 @@ function TimelinePage() {
       }
     : null;
 
+  /** Client-side scope over the shift's merged events. "Mine" falls back to the
+   *  captured name for events logged before the backend stamped operator_id. */
+  const loggedByName = state.user?.name ?? "";
+  const filteredEvents = state.events.filter((e) => {
+    if (scope === "mine") {
+      return e.operator_id ? e.operator_id === userId : e.logged_by === loggedByName;
+    }
+    if (scope === "line") return !!state.lineId && e.line_id === state.lineId;
+    return true;
+  });
+
+  const SCOPES = [
+    { id: "mine", label: "Mine", disabled: false },
+    { id: "line", label: "My line", disabled: !state.lineId },
+    { id: "all", label: "All", disabled: false },
+  ] as const;
+
   return (
     <AppShell title={`${state.shiftName} · ${locationLabel(state)}`}>
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-black">Shift timeline</h1>
-          <span className="text-sm font-bold text-muted-foreground">
-            {isSupervisor ? "All operators" : "Your entries"}
-          </span>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-black">Shift timeline</h1>
+            <span className="text-sm font-bold tabular-nums text-muted-foreground">
+              {filteredEvents.length} of {state.events.length}
+            </span>
+          </div>
+          <div className="flex gap-1.5">
+            {SCOPES.map((chip) => {
+              const active = scope === chip.id;
+              return (
+                <button
+                  key={chip.id}
+                  type="button"
+                  disabled={chip.disabled}
+                  onClick={() => setScope(chip.id)}
+                  title={chip.disabled ? "No line picked for this shift" : undefined}
+                  className={
+                    active
+                      ? "rounded-full bg-primary px-3.5 py-1.5 text-xs font-black text-primary-foreground"
+                      : "rounded-full border border-border px-3.5 py-1.5 text-xs font-bold text-muted-foreground hover:bg-secondary/60 disabled:opacity-50"
+                  }
+                >
+                  {chip.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {ended ? <ShiftSummaryCard /> : null}
@@ -133,9 +175,13 @@ function TimelinePage() {
           <p className="rounded-2xl border border-dashed border-border p-6 text-center text-base text-muted-foreground">
             No events yet. Tap RECORD on the home screen to log one.
           </p>
+        ) : filteredEvents.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-border p-6 text-center text-base text-muted-foreground">
+            Nothing in this view — try another filter.
+          </p>
         ) : null}
 
-        {state.events.map((event) => (
+        {filteredEvents.map((event) => (
           <TimelineEventRow
             key={event.id}
             event={event}

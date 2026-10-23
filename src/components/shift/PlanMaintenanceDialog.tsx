@@ -5,7 +5,7 @@ export interface PlanMaintenanceIssue {
 
 /**
  * Shared "push this issue to planned maintenance" dialog — used by the mobile
- * shift timeline, the end-of-shift summary and the console Approvals queue.
+ * shift timeline, the end-of-shift summary and the console Reports queue.
  * The issue is passed as plain text so both `ShiftEvent` (mobile store) and
  * `EventRow` (console queries) can drive it.
  */

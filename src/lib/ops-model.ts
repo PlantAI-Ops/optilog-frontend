@@ -7,15 +7,7 @@
  */
 
 export type SourceSystem =
-  | "operator"
-  | "supervisor"
-  | "mes"
-  | "scada"
-  | "cmms"
-  | "erp"
-  | "api"
-  | "import"
-  | "ai";
+  "operator" | "supervisor" | "mes" | "scada" | "cmms" | "erp" | "api" | "import" | "ai";
 
 export type EventType =
   | "downtime"
@@ -28,7 +20,13 @@ export type EventType =
   | "environmental";
 
 export type Severity = "low" | "medium" | "high" | "critical";
-export type OpsStatus = "open" | "in_progress" | "resolved" | "under_review";
+export type OpsStatus =
+  | "open"
+  | "in_progress"
+  | "resolved"
+  | "under_review"
+  | "escalated"
+  | "planned_maintenance";
 
 export interface Asset {
   id: string;
@@ -125,14 +123,7 @@ export interface Incident {
   ai_insight: string;
 }
 
-export type ConnectorKind =
-  | "rest"
-  | "webhook"
-  | "sql"
-  | "csv"
-  | "mqtt"
-  | "opcua"
-  | "sftp";
+export type ConnectorKind = "rest" | "webhook" | "sql" | "csv" | "mqtt" | "opcua" | "sftp";
 export type ConnectorDirection = "inbound" | "outbound" | "bidirectional";
 export type ConnectorHealth = "healthy" | "degraded" | "error" | "disabled";
 
@@ -249,7 +240,21 @@ export const shifts: Shift[] = [
   },
 ];
 
-function evt(e: Partial<OperationalEvent> & Pick<OperationalEvent, "id" | "timestamp" | "line_id" | "asset_id" | "shift_id" | "team_id" | "event_type" | "category" | "description">): OperationalEvent {
+function evt(
+  e: Partial<OperationalEvent> &
+    Pick<
+      OperationalEvent,
+      | "id"
+      | "timestamp"
+      | "line_id"
+      | "asset_id"
+      | "shift_id"
+      | "team_id"
+      | "event_type"
+      | "category"
+      | "description"
+    >,
+): OperationalEvent {
   const line = lines.find((l) => l.id === e.line_id)!;
   return {
     plant_id: plant.id,
@@ -433,13 +438,20 @@ export const incidents: Incident[] = [
     root_cause: "Pending engineering confirmation — repeat photo-eye failure suspected.",
     five_why: [
       { question: "Why did production stop?", answer: "The conveyor stopped indexing product." },
-      { question: "Why did the conveyor stop?", answer: "The PLC received no product-present signal." },
+      {
+        question: "Why did the conveyor stop?",
+        answer: "The PLC received no product-present signal.",
+      },
       { question: "Why was there no signal?", answer: "The photo-eye sensor failed." },
       { question: "Why did the sensor fail?", answer: "Housing exposed to washdown ingress." },
-      { question: "Why wasn't it detected earlier?", answer: "No condition check on the sensor in the PM routine." },
+      {
+        question: "Why wasn't it detected earlier?",
+        answer: "No condition check on the sensor in the PM routine.",
+      },
     ],
     corrective_action: "Photo-eye replaced with IP69K-rated unit and re-aligned.",
-    preventive_action: "Add sensor condition check to weekly PM; review washdown procedure on Line 3.",
+    preventive_action:
+      "Add sensor condition check to weekly PM; review washdown procedure on Line 3.",
     timeline: [
       { time: "14:14", label: "Machine stopped", source: "scada" },
       { time: "14:16", label: "Operator reported issue (voice)", source: "operator" },
@@ -669,4 +681,19 @@ export const STATUS_LABEL: Record<OpsStatus, string> = {
   in_progress: "In progress",
   resolved: "Resolved",
   under_review: "Under review",
+  escalated: "Escalated",
+  planned_maintenance: "Planned maintenance",
 };
+
+/** Statuses still owed a decision — supervisor queues and nav badges count these. */
+export const UNRESOLVED_STATUSES = new Set([
+  "draft",
+  "confirmed",
+  "investigating",
+  "open",
+  "escalated",
+  "planned_maintenance",
+]);
+
+/** Today's date as YYYY-MM-DD (UTC, matching the API's date filtering). */
+export const todayStr = () => new Date().toISOString().slice(0, 10);

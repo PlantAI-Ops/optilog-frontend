@@ -66,9 +66,12 @@ export function TimelineEventRow({
             {event.event_type || "Untitled event"}
           </span>
           <span className="block text-sm text-muted-foreground">
+            {[event.area_name, event.line_name].filter(Boolean).join(" · ")}
+            {[event.area_name, event.line_name].some(Boolean) && event.asset ? " · " : ""}
             {event.asset}
             {event.duration_minutes !== null ? ` · ${event.duration_minutes} min` : ""}
             {event.sync === "pending" ? " · pending sync" : ""}
+            {event.logged_by ? ` · logged by ${event.logged_by}` : ""}
           </span>
         </span>
         {statusIcon(event.status)}

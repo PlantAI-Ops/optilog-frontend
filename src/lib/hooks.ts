@@ -69,6 +69,12 @@ export interface EventRow {
   source_record_id: string;
   evidence: string[];
   incident_id: string | null;
+  /** Where it happened (enriched by the API; missing on older rows). */
+  area_id?: string;
+  area_name?: string;
+  /** Who logged it (operator_id only from authenticated event creation). */
+  operator_id?: string;
+  operator_name?: string;
 }
 
 export interface IncidentRow {
@@ -1096,6 +1102,9 @@ export interface MyEvent {
   /** Owner of the event (absent on older backends -> no owner-based rights). */
   operator_id?: string;
   operator_name?: string;
+  /** Where it happened — enriched by the API alongside line_name. */
+  area_id?: string;
+  area_name?: string;
 }
 
 export function useMyEvents(plantId: string | undefined, date: string, shiftId?: string) {
@@ -1280,6 +1289,12 @@ export interface ReportApprovalRow {
   handed_over_at?: string | null;
   sessions_open?: number;
   sessions_ended?: number;
+  /** Line the shift's events belong to (derived; null when nothing logs a location). */
+  line_id?: string | null;
+  line_name?: string | null;
+  area_id?: string | null;
+  area_name?: string | null;
+  team_id?: string | null;
 }
 
 export function useReportApprovals(plantId: string | undefined, enabled = true) {
@@ -1292,8 +1307,27 @@ export function useReportApprovals(plantId: string | undefined, enabled = true) 
   });
 }
 
+export interface ShiftAISummary {
+  summary: string;
+  /** "llm" when the model answered, "fallback" for the deterministic draft. */
+  source: string;
+  generated_at: string | null;
+  cached: boolean;
+}
+
+/** POST /shifts/{id}/ai-summary — cached on the shift doc, so the second call
+ * in the same handover is instant. `regenerate` forces a fresh LLM pass. */
+export function useShiftAISummary() {
+  return useMutation({
+    mutationFn: ({ shiftId, regenerate }: { shiftId: string; regenerate?: boolean }) =>
+      api.post<ShiftAISummary>(
+        `/shifts/${shiftId}/ai-summary${regenerate ? "?regenerate=true" : ""}`,
+      ),
+  });
+}
+
 /* -------------------------------------------------------------------------- */
-/*                        event review actions (Approvals)                     */
+/*                        event review actions (Reports)                       */
 /* -------------------------------------------------------------------------- */
 
 /** POST /events/{id}/confirm — draft -> confirmed (409 otherwise). */

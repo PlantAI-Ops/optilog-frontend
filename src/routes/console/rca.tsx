@@ -42,7 +42,7 @@ export const Route = createFileRoute("/console/rca")({
 function RcaPage() {
   const user = useShiftLog().user;
   const plantId = user?.plant_ids?.[0];
-  // Deep link (?incident=…) — the Approvals queue drops the supervisor on the
+  // Deep link (?incident=…) — the Reports queue drops the supervisor on the
   // incident it just opened an RCA for.
   const search = Route.useSearch();
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Loader2, Mic } from "lucide-react";
+import { ChevronDown, Loader2, Mic } from "lucide-react";
 import { AppShell } from "@/components/shift/AppShell";
 import { EventEditor } from "@/components/shift/EventEditor";
 import {
@@ -8,7 +8,7 @@ import {
   type PlanMaintenanceIssue,
 } from "@/components/shift/PlanMaintenanceDialog";
 import { TimelineEventRow } from "@/components/shift/TimelineEvent";
-import { usePlanMaintenance } from "@/lib/hooks";
+import { usePlanMaintenance, useShiftAISummary } from "@/lib/hooks";
 import { useShiftWindow } from "@/hooks/use-shift-window";
 import {
   canLogShift,
@@ -28,12 +28,12 @@ export const Route = createFileRoute("/end-shift")({
       {
         name: "description",
         content:
-          "Close out the shift with a summary of events and a handover note for the next crew.",
+          "Close out the shift with an AI summary of the events and a handover note for the next crew.",
       },
       { property: "og:title", content: "End shift & handover — OptiLog" },
       {
         property: "og:description",
-        content: "Shift totals, unresolved issues and the handover note in one screen.",
+        content: "Shift totals, the AI summary and the handover note in two quick steps.",
       },
     ],
   }),
@@ -50,11 +50,16 @@ function EndShiftPage() {
   const [planDate, setPlanDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [planNotes, setPlanNotes] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  /** Step 1 reviews the shift + AI summary; step 2 is the handover note. */
+  const [step, setStep] = useState<"review" | "handover">("review");
+  const [summary, setSummary] = useState<{ text: string; source: string } | null>(null);
+  const [showEvents, setShowEvents] = useState(false);
   const unresolved = unresolvedCount(state);
   const resolved = state.events.filter((e) => e.status === "resolved").length;
   const isSupervisor = hasMinRole(state.user?.role ?? "operator", "supervisor");
   const userId = state.user?.id ?? null;
   const planMaintenance = usePlanMaintenance();
+  const aiSummary = useShiftAISummary();
   const shiftWindow = useShiftWindow(state.windowEnd);
 
   // Part of the voice logging flow — shift_manager+ belongs on the manager home.
@@ -94,7 +99,41 @@ function EndShiftPage() {
       }
     : null;
 
-  const handleEnd = async () => {
+  /** Same shape as the backend's deterministic fallback, for offline shifts. */
+  const localSummaryText = () => {
+    const open = state.events.filter((e) => e.status !== "resolved");
+    const lines = [
+      `${state.events.length} event(s) logged: ${state.events.length - open.length} resolved, ${open.length} still open.`,
+    ];
+    if (open.length) {
+      lines.push("", "Still open:");
+      for (const e of open.slice(0, 10)) {
+        lines.push(`- ${e.observation || e.event_type}${e.asset ? ` · ${e.asset}` : ""}`);
+      }
+    }
+    return lines.join("\n");
+  };
+
+  // Step 1 -> 2: fetch (or reuse) the AI summary before the handover screen.
+  const handleReviewEnd = async () => {
+    setActionError(null);
+    if (!state.shiftId) {
+      setSummary({ text: localSummaryText(), source: "local" });
+      setStep("handover");
+      return;
+    }
+    try {
+      const res = await aiSummary.mutateAsync({ shiftId: state.shiftId });
+      setSummary({ text: res.summary, source: res.source });
+    } catch {
+      // Transport/permission failure only — never block the handover on AI.
+      setSummary({ text: localSummaryText(), source: "local" });
+    }
+    setStep("handover");
+  };
+
+  // Step 2 -> done: the actual handover.
+  const handleConfirm = async () => {
     setActionError(null);
     try {
       await endShift(note);
@@ -106,10 +145,47 @@ function EndShiftPage() {
     }
   };
 
+  const eventRows =
+    state.events.length === 0 ? (
+      <p className="rounded-2xl border border-dashed border-border p-6 text-center text-base text-muted-foreground">
+        No events were logged this shift.
+      </p>
+    ) : (
+      state.events.map((event) => (
+        <TimelineEventRow
+          key={event.id}
+          event={event}
+          open={openId === event.id}
+          onToggle={() => setOpenId(openId === event.id ? null : event.id)}
+          shiftId={state.shiftId ?? undefined}
+          canEdit={canManage(event)}
+          canDelete={canManage(event)}
+          canPlanMaintenance={isSupervisor}
+          onEdit={() => {
+            setActionError(null);
+            setEditId(event.id);
+          }}
+          onDelete={() => {
+            setActionError(null);
+            void deleteEvent(event.id).catch((err: unknown) =>
+              setActionError(err instanceof Error ? err.message : "Could not delete the event."),
+            );
+          }}
+          onPlanMaintenance={() => {
+            setPlanDate(new Date().toISOString().slice(0, 10));
+            setPlanNotes("");
+            setPlanEventId(event.id);
+          }}
+        />
+      ))
+    );
+
   return (
     <AppShell title="End of shift">
       <div className="flex flex-1 flex-col gap-5">
-        <h1 className="text-2xl font-black">Shift summary</h1>
+        <h1 className="text-2xl font-black">
+          {step === "review" ? "Shift summary" : "Hand over the shift"}
+        </h1>
 
         {shiftWindow.over ? (
           <p className="rounded-2xl border border-warning/40 bg-warning/10 p-4 text-base font-medium text-warning">
@@ -123,69 +199,73 @@ function EndShiftPage() {
           <Tile value={unresolved} label="unresolved" tone="warning" />
         </div>
 
-        <div>
-          <p className="text-lg font-bold">Everything logged this shift</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Fix or remove bad transcriptions here before you hand over.
-          </p>
-          <div className="mt-3 space-y-3">
-            {state.events.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-border p-6 text-center text-base text-muted-foreground">
-                No events were logged this shift.
-              </p>
-            ) : (
-              state.events.map((event) => (
-                <TimelineEventRow
-                  key={event.id}
-                  event={event}
-                  open={openId === event.id}
-                  onToggle={() => setOpenId(openId === event.id ? null : event.id)}
-                  shiftId={state.shiftId ?? undefined}
-                  canEdit={canManage(event)}
-                  canDelete={canManage(event)}
-                  canPlanMaintenance={isSupervisor}
-                  onEdit={() => {
-                    setActionError(null);
-                    setEditId(event.id);
-                  }}
-                  onDelete={() => {
-                    setActionError(null);
-                    void deleteEvent(event.id).catch((err: unknown) =>
-                      setActionError(
-                        err instanceof Error ? err.message : "Could not delete the event.",
-                      ),
-                    );
-                  }}
-                  onPlanMaintenance={() => {
-                    setPlanDate(new Date().toISOString().slice(0, 10));
-                    setPlanNotes("");
-                    setPlanEventId(event.id);
-                  }}
-                />
-              ))
-            )}
+        {step === "review" ? (
+          <div>
+            <p className="text-lg font-bold">Everything logged this shift</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Fix or remove bad transcriptions here before you hand over.
+            </p>
+            <div className="mt-3 space-y-3">{eventRows}</div>
           </div>
-        </div>
+        ) : (
+          <>
+            {summary ? (
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
+                    Shift summary
+                  </p>
+                  <span
+                    className="rounded-full border border-border bg-secondary px-2.5 py-0.5 text-[11px] font-bold uppercase text-muted-foreground"
+                    title={
+                      summary.source === "llm"
+                        ? "Written by the shift AI from this shift's events"
+                        : "Draft from the shift totals — review before handing over"
+                    }
+                  >
+                    {summary.source === "llm" ? "AI" : "Draft"}
+                  </span>
+                </div>
+                <p className="mt-2 text-base whitespace-pre-line">{summary.text}</p>
+              </div>
+            ) : null}
 
-        <div>
-          <p className="text-lg font-bold">Anything the next shift needs to know?</p>
-          <textarea
-            rows={4}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Handover note…"
-            className="mt-2 max-h-40 w-full resize-none overflow-y-auto rounded-2xl border border-input bg-secondary p-4 text-base outline-none focus:border-ring"
-          />
-          <button
-            type="button"
-            onClick={() =>
-              setNote((n) => (n ? n : "Watch the Line 3 motor noise — maintenance is aware."))
-            }
-            className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card font-bold"
-          >
-            <Mic className="size-5" /> Dictate note
-          </button>
-        </div>
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowEvents((v) => !v)}
+                aria-expanded={showEvents}
+                className="flex w-full items-center justify-between gap-2 rounded-2xl border border-border bg-card px-4 py-3 text-base font-bold"
+              >
+                View each logged event ({state.events.length})
+                <ChevronDown
+                  className={`size-5 shrink-0 transition-transform ${showEvents ? "rotate-180" : ""}`}
+                />
+              </button>
+              {showEvents ? <div className="mt-3 space-y-3">{eventRows}</div> : null}
+            </div>
+
+            <div>
+              <p className="text-lg font-bold">Anything the next shift needs to know?</p>
+              <textarea
+                rows={4}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Handover note…"
+                className="mt-2 max-h-40 w-full resize-none overflow-y-auto rounded-2xl border border-input bg-secondary p-4 text-base outline-none focus:border-ring"
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  setNote((n) => (n ? n : "Watch the Line 3 motor noise — maintenance is aware."))
+                }
+                className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card font-bold"
+              >
+                <Mic className="size-5" /> Dictate note
+              </button>
+            </div>
+          </>
+        )}
 
         {state.error || actionError ? (
           <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-base font-medium text-destructive break-words">
@@ -193,7 +273,7 @@ function EndShiftPage() {
           </div>
         ) : null}
 
-        {!isSupervisor ? (
+        {!isSupervisor && step === "handover" ? (
           <p className="rounded-2xl border border-warning/40 bg-warning/10 p-4 text-base font-medium text-warning">
             Ending the shift sends it for supervisor approval.
           </p>
@@ -215,16 +295,16 @@ function EndShiftPage() {
                 Open report
               </Link>
             </>
-          ) : (
+          ) : step === "review" ? (
             <>
               <button
                 type="button"
-                onClick={handleEnd}
-                disabled={state.loading}
+                onClick={handleReviewEnd}
+                disabled={aiSummary.isPending}
                 className="flex h-20 w-full items-center justify-center gap-3 rounded-3xl bg-primary text-xl font-black text-primary-foreground disabled:opacity-60"
               >
-                {state.loading ? <Loader2 className="size-5 animate-spin" /> : null}
-                End Shift
+                {aiSummary.isPending ? <Loader2 className="size-5 animate-spin" /> : null}
+                {aiSummary.isPending ? "Writing shift summary…" : "End Shift"}
               </button>
               <Link
                 to="/"
@@ -232,6 +312,33 @@ function EndShiftPage() {
               >
                 Not yet — back to shift
               </Link>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleConfirm}
+                disabled={state.loading}
+                className="flex h-20 w-full items-center justify-center gap-3 rounded-3xl bg-primary text-xl font-black text-primary-foreground disabled:opacity-60"
+              >
+                {state.loading ? <Loader2 className="size-5 animate-spin" /> : null}
+                Confirm &amp; hand over
+              </button>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStep("review")}
+                  className="flex h-14 w-full items-center justify-center rounded-2xl border border-border bg-secondary font-bold"
+                >
+                  Back to summary
+                </button>
+                <Link
+                  to="/"
+                  className="flex h-14 w-full items-center justify-center rounded-2xl border border-border bg-secondary font-bold"
+                >
+                  Not yet — back to shift
+                </Link>
+              </div>
             </>
           )}
         </div>

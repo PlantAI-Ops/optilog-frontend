@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Activity,
+  BookOpen,
   CalendarClock,
   CalendarRange,
   ClipboardCheck,
@@ -18,7 +19,14 @@ import {
   LayoutDashboard,
   LayoutGrid,
 } from "lucide-react";
-import { usePlant, useReportApprovals, useShiftsNow, useLessonsToReview } from "@/lib/hooks";
+import {
+  useEvents,
+  usePlant,
+  useReportApprovals,
+  useShiftsNow,
+  useLessonsToReview,
+} from "@/lib/hooks";
+import { UNRESOLVED_STATUSES, todayStr } from "@/lib/ops-model";
 import { formatWindow, shiftLabel } from "@/lib/shift-now";
 import { canLogShift, logoutHard, hasMinRole, useShiftLog } from "@/lib/shift-log";
 
@@ -37,8 +45,8 @@ const NAV: NavItem[] = [
   { to: "/console", label: "Dashboard", icon: Gauge, exact: true },
   { to: "/console/shifts", label: "Shifts", icon: CalendarClock, exact: false },
   {
-    to: "/console/approvals",
-    label: "Approvals",
+    to: "/console/reports",
+    label: "Reports",
     icon: ClipboardCheck,
     exact: false,
     minRole: "supervisor",
@@ -51,6 +59,13 @@ const NAV: NavItem[] = [
   { to: "/console/rca", label: "RCA", icon: Search, exact: false },
   { to: "/console/integrations", label: "Connect", icon: Plug, exact: false },
   { to: "/console/data", label: "Data model", icon: Database, exact: false },
+  {
+    to: "/console/vocabulary",
+    label: "Vocabulary",
+    icon: BookOpen,
+    exact: false,
+    minRole: "supervisor",
+  },
 ];
 
 const ADMIN_NAV = { to: "/console/admin", label: "Admin", icon: Shield, exact: true } as const;
@@ -75,20 +90,29 @@ export function ConsoleShell({
 }) {
   const user = useShiftLog().user;
   const plantId = user?.plant_ids?.[0];
-  // Approvals queue: only supervisors see it, and only they poll it.
+  // Reports / Vocabulary queues: only supervisors see them, so only they poll.
   const isSupervisor = !!user && hasMinRole(user.role, "supervisor");
   const reportApprovals = useReportApprovals(plantId, isSupervisor);
   const pendingReports = (reportApprovals.data ?? []).filter((r) => !r.report_approved_at).length;
-  // Vocabulary lessons awaiting a decision count as approvals too.
+  const todayEvents = useEvents(isSupervisor ? plantId : undefined, todayStr(), { limit: 200 });
+  const openEvents = (todayEvents.data ?? []).filter((e) =>
+    UNRESOLVED_STATUSES.has(e.status),
+  ).length;
+  // Vocabulary lessons awaiting a decision badge their own tab.
   const lessonsToReview = useLessonsToReview(plantId, isSupervisor);
-  const approvalsBadge = pendingReports + lessonsToReview.total;
+  const reportsBadge = pendingReports + openEvents;
+  const vocabularyBadge = lessonsToReview.total;
   const navItems: NavItem[] = NAV.filter(
     (item) => !item.minRole || (user && hasMinRole(user.role, item.minRole)),
-  ).map((item) =>
-    item.to === "/console/approvals" && approvalsBadge > 0
-      ? { ...item, badge: approvalsBadge }
-      : item,
-  );
+  ).map((item) => {
+    const badge =
+      item.to === "/console/reports"
+        ? reportsBadge
+        : item.to === "/console/vocabulary"
+          ? vocabularyBadge
+          : 0;
+    return badge > 0 ? { ...item, badge } : item;
+  });
   // Plant tabs are dead weight for accounts with no plant (system_admin).
   // They are hidden by default; system_admin can re-reveal them via a
   // persisted toggle - revealed tabs still land on the ConsoleGate card.

@@ -1269,3 +1269,30 @@ const updateRing = () => {
 - Frontend `.env` points at `http://localhost:8000/api/v1`; the dev backend runs with `--reload`, so file edits go live on the next 60s worker tick — verify with read-only `get_report_approvals` scripts rather than restarting servers.
 - Two stale open sessions remain on old `pending` shifts (never activated → never force-ended); out of scope until `pending` shifts get lifecycle rules.
 - Gates: `npm run typecheck` clean, `npx eslint --fix` on touched files → only pre-existing `any`s (hooks 618/652/1094, index 18-21), `npm run build` exit 0.
+
+---
+
+## 2026-10-16: Reports tab (area to line), vocabulary page, AI shift summary, timeline scope chips
+
+**What shipped (user-approved plan, two repos):** console Approvals renamed **Reports** and grouped **area to line** (one row per line, drill-in keeps per-shift approve/unapprove); the vocabulary section moved to its own **`/console/vocabulary`** page (no settings page exists); End Shift became **two steps** (End Shift → AI summary + collapsed event list → *Confirm & hand over* → `/timeline`); the timeline got **Mine / My line / All** chips; every event card now carries **area, line, logger**.
+
+**Backend (`optilog-backend`):**
+- `create_event` now persists `operator_id`; `POST /shifts/{id}/events` stamps it from the authenticated user (`ShiftEventCreate` has no such field, so it is unspoofable). `GET /events`, `/shifts/{id}/events`, `/incident-events`, `/my-events` all return `area_id`/`area_name`/`operator_id`/`operator_name` via shared `_event_display_context` helpers in `dashboard/service.py`; `get_shift_events` prefers the event's own `line_id` over the asset's line.
+- `get_report_approvals` derives **line/area per shift** in priority order: `shift.line_id` → majority `line_id` over the shift's events (asset-derived when the event lacks one) → the team's single `assigned_line_ids` entry; area comes from the line doc, falling back to event `area_id` votes. Rows now ship `line_id`/`line_name`/`area_id`/`area_name`/`team_id` (empty strings when unresolvable; the UI maps blank to "Unassigned *").
+- New `POST /shifts/{id}/ai-summary?regenerate=` (`generate_shift_summary` in `shifts/service.py`): cache hit on the shift doc (`ai_summary`/`ai_summary_source`/`ai_summary_at`) returns instantly with `cached: true`; otherwise up to 200 events → `groq_ai.summarize_shift` (context profile built only when a key is configured) → persisted. **LLM/transport failure always falls back** to a deterministic count + still-open summary (`source: "fallback"`) — the endpoint never raises, matching the RCA-insight convention. 7 new tests → **330 passed**.
+
+**Frontend (`optilog-frontend`):**
+- Route rename: `git mv approvals.tsx reports.tsx` + a redirect stub at `/console/approvals` (`beforeLoad: () => throw redirect(...)`) so bookmarks survive; `routeTree.gen.ts` regenerates via `npm run build` (never edit it by hand).
+- `ConsoleShell` NAV: Reports badge = unapproved reports + today's unresolved events (the shell now polls `useEvents` for supervisors only; same query key as the page, so it is deduped); Vocabulary got its own nav entry + badge (`useLessonsToReview`). `todayStr()` and `UNRESOLVED_STATUSES` moved into `ops-model.ts` as shared constants (was a duplicated local `UNRESOLVED` set).
+- `reports.tsx`: rows bucketed by `area_name::line_name` (blank → "Unassigned *"), sorted alphabetically with unassigned last; expanding a line renders the previous per-shift table inline (`colSpan` detail row; the Open button `stopPropagation`s so row+button do not double-toggle). Approve/unapprove, push-to-maintenance, Start-RCA and the event-action list are unchanged, but event cards now show `area · line · … · logged by X`.
+- `end-shift.tsx`: step state `"review" | "handover"`. *End Shift* calls `useShiftAISummary` (badge "AI" vs "Draft" from `source`), then step 2 shows the summary card, events collapsed behind *View each logged event (N)*, and the handover textarea + *Confirm & hand over*. **AI is never on the critical path**: no `shiftId` or a transport error → the same deterministic summary built locally (`localSummaryText`) and the flow continues.
+- `timeline.tsx`: chips filter `state.events` client-side — Mine = `operator_id === user.id` with `logged_by === user.name` fallback for pre-stamping rows; My line = `e.line_id === state.lineId`, chip disabled when the shift has no line; All. Default scope: supervisors `all`, operators `mine`. Header shows `N of M`.
+- `ShiftEvent` += `line_name?`/`area_name?` (stamped in `addEvent` from the shift's picks via `pickName`, which drops the literal `"Unassigned"`), and `mapMyEventToShiftEvent` now carries `line_id`/`area_id`/`line_name`/`area_name`; `MyEvent`/`EventRow` gained the matching optional fields.
+
+**Gotchas:**
+- `POST /shifts/{id}/events` forwards the whole local `ShiftEvent` (incl. the new display names) — pydantic's default extra-ignore makes this safe; do not switch those models to `extra="forbid"` without trimming the payload.
+- ConsoleShell's events poll fires on every console page for supervisors (15s `useReportApprovals` + `useEvents` staleTime) — same queryKey as the Reports page so it is fetched once.
+- The redirect stub keeps `/console/approvals` in `routeTree.gen.ts` forever; that is intentional (deep links), not dead code.
+- `end-shift` summary regeneration is not offered in the UI yet (`regenerate` param exists server-side only) — add a "Regenerate" affordance if supervisors ask.
+- Live read-only check (supervisor token minted in-process, no DB writes): `/shifts/report-approvals` 200 with all new keys present (values empty on the current 0-event dev shift; derivation is covered by tests), `/my-events` 200.
+- Gates: backend `pytest tests -q` = **330 passed**; frontend `npm run typecheck` clean, `npx eslint --fix` on touched files → only the 3 pre-existing `any`s in `hooks.ts` (now 624/658/1100), `npm run build` exit 0.

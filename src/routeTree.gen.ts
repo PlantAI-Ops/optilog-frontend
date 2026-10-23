@@ -23,9 +23,11 @@ import { Route as ConsoleIntegrationsRouteImport } from './routes/console/integr
 import { Route as ConsoleLayoutRouteImport } from './routes/console/layout'
 import { Route as ConsoleMaintenanceRouteImport } from './routes/console/maintenance'
 import { Route as ConsoleRcaRouteImport } from './routes/console/rca'
+import { Route as ConsoleReportsRouteImport } from './routes/console/reports'
 import { Route as ConsoleScheduleRouteImport } from './routes/console/schedule'
 import { Route as ConsoleShiftsRouteImport } from './routes/console/shifts'
 import { Route as ConsoleTeamsRouteImport } from './routes/console/teams'
+import { Route as ConsoleVocabularyRouteImport } from './routes/console/vocabulary'
 import { Route as InviteTokenRouteImport } from './routes/invite/$token'
 import { Route as ConsoleAdminIndexRouteImport } from './routes/console/admin/index'
 import { Route as ConsoleAdminTenantIdRouteImport } from './routes/console/admin/$tenantId'
@@ -106,6 +108,11 @@ const ConsoleRcaRoute = ConsoleRcaRouteImport.update({
   path: '/rca',
   getParentRoute: () => ConsoleRouteRoute,
 } as any)
+const ConsoleReportsRoute = ConsoleReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
 const ConsoleScheduleRoute = ConsoleScheduleRouteImport.update({
   id: '/schedule',
   path: '/schedule',
@@ -119,6 +126,11 @@ const ConsoleShiftsRoute = ConsoleShiftsRouteImport.update({
 const ConsoleTeamsRoute = ConsoleTeamsRouteImport.update({
   id: '/teams',
   path: '/teams',
+  getParentRoute: () => ConsoleRouteRoute,
+} as any)
+const ConsoleVocabularyRoute = ConsoleVocabularyRouteImport.update({
+  id: '/vocabulary',
+  path: '/vocabulary',
   getParentRoute: () => ConsoleRouteRoute,
 } as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
@@ -185,9 +197,11 @@ export interface FileRoutesByFullPath {
   '/console/layout': typeof ConsoleLayoutRoute
   '/console/maintenance': typeof ConsoleMaintenanceRoute
   '/console/rca': typeof ConsoleRcaRoute
+  '/console/reports': typeof ConsoleReportsRoute
   '/console/schedule': typeof ConsoleScheduleRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
+  '/console/vocabulary': typeof ConsoleVocabularyRoute
   '/invite/$token': typeof InviteTokenRoute
   '/console/': typeof ConsoleIndexRoute
   '/console/admin/$tenantId': typeof ConsoleAdminTenantIdRouteWithChildren
@@ -211,9 +225,11 @@ export interface FileRoutesByTo {
   '/console/layout': typeof ConsoleLayoutRoute
   '/console/maintenance': typeof ConsoleMaintenanceRoute
   '/console/rca': typeof ConsoleRcaRoute
+  '/console/reports': typeof ConsoleReportsRoute
   '/console/schedule': typeof ConsoleScheduleRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
+  '/console/vocabulary': typeof ConsoleVocabularyRoute
   '/invite/$token': typeof InviteTokenRoute
   '/console': typeof ConsoleIndexRoute
   '/console/admin': typeof ConsoleAdminIndexRoute
@@ -238,9 +254,11 @@ export interface FileRoutesById {
   '/console/layout': typeof ConsoleLayoutRoute
   '/console/maintenance': typeof ConsoleMaintenanceRoute
   '/console/rca': typeof ConsoleRcaRoute
+  '/console/reports': typeof ConsoleReportsRoute
   '/console/schedule': typeof ConsoleScheduleRoute
   '/console/shifts': typeof ConsoleShiftsRoute
   '/console/teams': typeof ConsoleTeamsRoute
+  '/console/vocabulary': typeof ConsoleVocabularyRoute
   '/invite/$token': typeof InviteTokenRoute
   '/console/': typeof ConsoleIndexRoute
   '/console/admin/$tenantId': typeof ConsoleAdminTenantIdRouteWithChildren
@@ -268,9 +286,11 @@ export interface FileRouteTypes {
     | '/console/layout'
     | '/console/maintenance'
     | '/console/rca'
+    | '/console/reports'
     | '/console/schedule'
     | '/console/shifts'
     | '/console/teams'
+    | '/console/vocabulary'
     | '/invite/$token'
     | '/console/'
     | '/console/admin/$tenantId'
@@ -294,9 +314,11 @@ export interface FileRouteTypes {
     | '/console/layout'
     | '/console/maintenance'
     | '/console/rca'
+    | '/console/reports'
     | '/console/schedule'
     | '/console/shifts'
     | '/console/teams'
+    | '/console/vocabulary'
     | '/invite/$token'
     | '/console'
     | '/console/admin'
@@ -320,9 +342,11 @@ export interface FileRouteTypes {
     | '/console/layout'
     | '/console/maintenance'
     | '/console/rca'
+    | '/console/reports'
     | '/console/schedule'
     | '/console/shifts'
     | '/console/teams'
+    | '/console/vocabulary'
     | '/invite/$token'
     | '/console/'
     | '/console/admin/$tenantId'
@@ -444,6 +468,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConsoleRcaRouteImport
       parentRoute: typeof ConsoleRouteRoute
     }
+    '/console/reports': {
+      id: '/console/reports'
+      path: '/reports'
+      fullPath: '/console/reports'
+      preLoaderRoute: typeof ConsoleReportsRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
     '/console/schedule': {
       id: '/console/schedule'
       path: '/schedule'
@@ -463,6 +494,13 @@ declare module '@tanstack/react-router' {
       path: '/teams'
       fullPath: '/console/teams'
       preLoaderRoute: typeof ConsoleTeamsRouteImport
+      parentRoute: typeof ConsoleRouteRoute
+    }
+    '/console/vocabulary': {
+      id: '/console/vocabulary'
+      path: '/vocabulary'
+      fullPath: '/console/vocabulary'
+      preLoaderRoute: typeof ConsoleVocabularyRouteImport
       parentRoute: typeof ConsoleRouteRoute
     }
     '/invite/$token': {
@@ -584,9 +622,11 @@ interface ConsoleRouteRouteChildren {
   ConsoleLayoutRoute: typeof ConsoleLayoutRoute
   ConsoleMaintenanceRoute: typeof ConsoleMaintenanceRoute
   ConsoleRcaRoute: typeof ConsoleRcaRoute
+  ConsoleReportsRoute: typeof ConsoleReportsRoute
   ConsoleScheduleRoute: typeof ConsoleScheduleRoute
   ConsoleShiftsRoute: typeof ConsoleShiftsRoute
   ConsoleTeamsRoute: typeof ConsoleTeamsRoute
+  ConsoleVocabularyRoute: typeof ConsoleVocabularyRoute
   ConsoleIndexRoute: typeof ConsoleIndexRoute
 }
 
@@ -599,9 +639,11 @@ const ConsoleRouteRouteChildren: ConsoleRouteRouteChildren = {
   ConsoleLayoutRoute: ConsoleLayoutRoute,
   ConsoleMaintenanceRoute: ConsoleMaintenanceRoute,
   ConsoleRcaRoute: ConsoleRcaRoute,
+  ConsoleReportsRoute: ConsoleReportsRoute,
   ConsoleScheduleRoute: ConsoleScheduleRoute,
   ConsoleShiftsRoute: ConsoleShiftsRoute,
   ConsoleTeamsRoute: ConsoleTeamsRoute,
+  ConsoleVocabularyRoute: ConsoleVocabularyRoute,
   ConsoleIndexRoute: ConsoleIndexRoute,
 }
 
