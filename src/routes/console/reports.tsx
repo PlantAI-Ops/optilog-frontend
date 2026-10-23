@@ -429,20 +429,26 @@ function ReportsPage() {
 
                   <button
                     type="button"
-                    disabled={plannedEventIds.has(e.id)}
+                    disabled={plannedEventIds.has(e.id) || e.status === "planned_maintenance"}
                     onClick={() => {
                       setPlanRow(e);
                       setPlanDate(todayStr());
                       setPlanNotes("");
                     }}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-warning/40 bg-warning/10 px-3 py-1.5 text-xs font-bold text-warning disabled:opacity-50"
-                    title={plannedEventIds.has(e.id) ? "Already pushed to maintenance" : undefined}
+                    title={
+                      plannedEventIds.has(e.id) || e.status === "planned_maintenance"
+                        ? "Already pushed to maintenance"
+                        : undefined
+                    }
                   >
                     <Wrench className="size-3.5" />
-                    {plannedEventIds.has(e.id) ? "Planned" : "Push to maintenance"}
+                    {plannedEventIds.has(e.id) || e.status === "planned_maintenance"
+                      ? "Planned"
+                      : "Push to maintenance"}
                   </button>
 
-                  {e.event_type === "breakdown" && !e.incident_id ? (
+                  {e.event_type === "breakdown" && !e.incident_id && e.status !== "escalated" ? (
                     <button
                       type="button"
                       disabled={pendingId === e.id || createRCA.isPending}

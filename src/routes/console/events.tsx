@@ -137,7 +137,7 @@ function EventsPage() {
                           <Row k="Incident" v={e.incident_id ?? ""} />
                         </dl>
                       </div>
-                      {e.event_type === "breakdown" && canCreateRCA && !e.incident_id ? (
+                      {e.event_type === "breakdown" && canCreateRCA && !e.incident_id && e.status !== "escalated" ? (
                         <div className="mt-4 border-t border-border/60 pt-3">
                           <button
                             type="button"

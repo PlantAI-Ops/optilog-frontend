@@ -20,7 +20,13 @@ export type EventType =
   | "environmental";
 
 export type Severity = "low" | "medium" | "high" | "critical";
-export type OpsStatus = "open" | "in_progress" | "resolved" | "under_review";
+export type OpsStatus =
+  | "open"
+  | "in_progress"
+  | "resolved"
+  | "under_review"
+  | "escalated"
+  | "planned_maintenance";
 
 export interface Asset {
   id: string;
@@ -675,6 +681,8 @@ export const STATUS_LABEL: Record<OpsStatus, string> = {
   in_progress: "In progress",
   resolved: "Resolved",
   under_review: "Under review",
+  escalated: "Escalated",
+  planned_maintenance: "Planned maintenance",
 };
 
 /** Statuses still owed a decision — supervisor queues and nav badges count these. */
@@ -684,6 +692,7 @@ export const UNRESOLVED_STATUSES = new Set([
   "investigating",
   "open",
   "escalated",
+  "planned_maintenance",
 ]);
 
 /** Today's date as YYYY-MM-DD (UTC, matching the API's date filtering). */
