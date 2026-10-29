@@ -275,7 +275,10 @@ export function useCreateRCAFromEvent() {
     mutationFn: ({ eventId }: { eventId: string }) =>
       api.post<RCARow>(`/rca/events/${eventId}/rca`, {}),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["dashboard", "incidents"] });
+      // Broad on purpose: the push flips event status + creates an incident,
+      // and a narrow ["dashboard","incidents"] prefix never matches the real
+      // ["dashboard", plantId, "incidents", …] keys.
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -1266,6 +1269,9 @@ export function usePlanMaintenance() {
       }),
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["planned-maintenance"] });
+      // Row badges join events against ["actions", …] — refresh both so the
+      // #ACT- ref shows without waiting out staleTime.
+      qc.invalidateQueries({ queryKey: ["actions"] });
       // The event flips to planned_maintenance server-side — refresh the
       // events list so buttons/labels update without waiting for staleTime.
       qc.invalidateQueries({ queryKey: ["dashboard", variables.plantId, "events"] });
@@ -1441,6 +1447,8 @@ export function useResolveEvent() {
 
 export interface ActionRow {
   id: string;
+  /** `#ACT-0042` — same on every surface; legacy docs fall back to last-4. */
+  ref?: string;
   event_id: string | null;
   incident_id: string | null;
   type: string;
@@ -1448,6 +1456,16 @@ export interface ActionRow {
   status: string;
   due_date: string | null;
 }
+
+/** Event statuses that already went to a downstream queue (RCA / maintenance
+ *  / closed) — mirrors ROUTED_STATUSES in the backend events service. Rows in
+ *  this set show their routing indicator instead of a push button. */
+export const ROUTED_EVENT_STATUSES: ReadonlySet<string> = new Set([
+  "escalated",
+  "planned_maintenance",
+  "resolved",
+  "deleted",
+]);
 
 /** GET /actions?type=… — used to know which events were already pushed. */
 export function useActionsByType(plantId: string | undefined, type: string, enabled = true) {

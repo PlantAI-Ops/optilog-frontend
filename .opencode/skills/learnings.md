@@ -1424,3 +1424,30 @@ export function useCompletePlannedMaintenance() {
 - ✅ `npm run typecheck` clean
 - ✅ `npx eslint --fix src/routes/index.tsx` → only the 4 pre-existing `any`s (lines 18-21)
 - ✅ `npm run build` exit 0
+
+---
+
+## 2026-10-29: Console Manual Routing — Visible RCA/Maintenance Push + #ACT- Refs
+
+**Context:** Console event rows hid both push actions behind row-expansion (RCA additionally breakdown-only), while auto-routing already handles two event types. User wanted: always-visible buttons for anything NOT yet routed, and routed rows showing their incident/maintenance number instead.
+
+**Backend model (the key to everything):**
+- `AUTO_ROUTE_TO_RCA = {"breakdown"}` (→ incident + draft RCA, status `escalated`), `AUTO_ROUTE_TO_MAINTENANCE = {"observation"}` (→ action, status `planned_maintenance`); `ROUTED_STATUSES = {escalated, planned_maintenance, resolved, deleted}` = already handed off. Manual routing therefore only targets downtime/quality/safety/etc.
+- RCA endpoint's `event_type == "breakdown"` 409 lifted in `rca/service.py` — now: existing incident → idempotent reuse; else status ∈ {planned_maintenance, resolved, deleted} → 409 "already routed or closed"; else create for **any** type.
+- Maintenance endpoint never had a status gate (idempotent by design) — its gate was frontend-only.
+- `#ACT-###` refs mirror the incident system (`incidents/service.py`): same format/parse/resolve + backfill script, but counter-keyed **per tenant** (`action:{tenant_id}`) because `GET /actions` is tenant-wide (no plant filter). Actions have no plant_id; incidents are plant-scoped.
+
+**Frontend decisions:**
+- `ROUTED_EVENT_STATUSES` exported from `hooks.ts` as the single gate (mirrors backend); `canRCA = !incident_id && !routed`, `canMaint = !action && !routed` — used in both the new always-visible Actions column (8th col, both colSpans bumped) and the expanded row.
+- Routed rows render badges instead of buttons: `#INC-…` → `/console/rca?incident=…`, `#ACT-…` → `/console/maintenance` (event→action joined client-side via `useActionsByType`, `page_size=200`).
+
+**Gotchas found:**
+- **Invalidation prefix bug:** `useCreateRCAFromEvent` invalidated `["dashboard","incidents"]` — but real keys are `["dashboard", plantId, "incidents", status]`, so the prefix never matched and nothing refreshed. Fixed to broad `["dashboard"]`. (TanStack matches by array-prefix; a literal in position 1 must match the plantId position.)
+- `usePlanMaintenance` didn't invalidate `["actions", …]` → new badge would sit ref-less for `staleTime`; added.
+- `useActionsByType`'s third `enabled` arg is **dead** (hook hardcodes `enabled: !!plantId`) — harmless but misleading; reports passes it anyway.
+- `mergeEvents` on mobile is add-only (never updates existing rows) — why mobile needed a local `updateEvent` in the earlier (reverted) attempt; console pages refetch properly so no local patching needed here.
+- Events list already returns `incident_ref` per row (dashboard enrichment) — no backend change needed for the incident badge.
+
+**Process:** First attempt misread "for events" as mobile timeline/end-shift rows — reverted entirely (`git checkout` of 5 files) before building on console. Confirm surface before building when a request says "for X too".
+
+**Verification:** frontend `tsc` clean / eslint only 3 documented pre-existing `any`s / `vite build` exit 0 / SSR 200 on `/console/events`, `/console/reports`, `/timeline`; backend `uv run pytest` **345 passed** (409-test flipped to 200 + new already-routed 409 test + `#ACT-` assertions). Backend restarted with `--reload` (was running without it — code changes never go live silently).
