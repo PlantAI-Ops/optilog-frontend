@@ -1396,3 +1396,31 @@ export function useCompletePlannedMaintenance() {
 - ✅ `npm run typecheck` clean
 - ✅ `npx eslint --fix` on touched files → only the 3 pre-existing `any`s in hooks.ts
 - ✅ `npm run build` exit 0
+
+---
+
+## 2026-10-29: "No scheduled shift today" While a Shift Is Running
+
+**Context:** The mobile start-logging panel showed "Running now: Morning (6–14) · Team A on shift (3)" directly above "No scheduled shift today. Events will be logged to a pending shift." — same screen, two endpoints disagreeing.
+
+**Root cause:**
+- "Running now" card ← `useShiftsNow` → `GET /shifts/now` — plant-wide pattern window + rotation team; no per-user state.
+- Banner ← `useCurrentShift` → `GET /shifts/current`, fires on `current_shift.status === "pending"`.
+- Backend `get_current_shift` Branch B (`dashboard/service.py`): window IS active but the caller belongs to **no active team** (not in `member_ids`/`supervisor_id`, or team inactive) → returns the team-less `_pending_shift` placeholder with `status: "pending"`. So `status === "pending"` means "you got the placeholder", NOT "no scheduled shift today".
+- Banner only renders when `!blocked`, and `blocked = offShift && !isSupervisor` — so the contradiction surfaces for **supervisors/managers without a team** (plant_manager bypasses the gate; a team-less operator would get the blocked card instead).
+- Confirmed live (read-only pymongo): Factory Beta has `morning 6–14` covering now AND an in-window `team=None, type=pending, status=pending` doc created that same day 06:00–14:00 — Branch B firing; users like Plant Manager One are in no team.
+
+**Decisions:**
+- Frontend-only fix (user chose over a backend `pending_reason` field): branch banner copy on `nowShift.data.current_shift` — window running → "The Morning shift is running (6–14), but you're not assigned to a team — events will be logged to a pending shift" + "Covering this window: Team A"; use `myTeam` (already computed in StartShiftScreen) to distinguish "no team" vs "your team isn't working this window"; window absent → original copy (the only case it's true).
+- Fixed the sibling symptom: headline used `shiftLabel("pending")` → "Hello X, Pending"; now falls back to the time-of-day greeting when `shift_type === "pending"`.
+
+**Gotchas:**
+- `/shifts/current` returns `start`/`end` as **hour ints**, not ISO — use `nowShift`'s ISO `start`/`end` (or raw `start_hour`/`end_hour`) for window display; don't `formatWindow()` the current-shift payload.
+- `status: "pending"` payloads only come from `_pending_shift` (Branch A no window / B no team / C rotation-off + no future doc) — generator/activator docs are always `scheduled`/`active`.
+- `myTeam` is undefined while `teamsDetail` loads — copy degrades to "not assigned to a team" until teams arrive; fine for a banner.
+- Pattern-window hour math is identical in both endpoints (`match_active_pattern` vs inline) — Branch A (no window) can't contradict `/shifts/now`; only Branch B/C produce the split.
+
+**Verification:**
+- ✅ `npm run typecheck` clean
+- ✅ `npx eslint --fix src/routes/index.tsx` → only the 4 pre-existing `any`s (lines 18-21)
+- ✅ `npm run build` exit 0
