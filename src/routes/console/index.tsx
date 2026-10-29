@@ -101,18 +101,40 @@ function Dashboard() {
     <ConsoleShell title="Plant dashboard" subtitle="Today — all teams, all shifts">
       <CurrentShiftBanner />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Production achievement" value={`${s?.achievement ?? 0}%`} hint={
-              <>
-                <ClientOnly fallback={<span>{formatNumber(s?.produced ?? 0)}</span>}>
-                  {(s?.produced ?? 0).toLocaleString()}
-                </ClientOnly> of <ClientOnly fallback={<span>{formatNumber(s?.target ?? 0)}</span>}>
-                  {(s?.target ?? 0).toLocaleString()}
-                </ClientOnly> units
-              </>
-            } tone="success" />
-        <StatCard label="Downtime" value={`${s?.downtime ?? 0} min`} hint={`Across ${s?.lineCount ?? 0} active lines`} tone="warning" />
-        <StatCard label="Active issues" value={s?.activeIssues ?? 0} hint={`${s?.unresolved ?? 0} unresolved`} tone="danger" />
-        <StatCard label="RCA pending" value={s?.rcaPending ?? 0} hint={`${s?.quality ?? 0} quality events today`} />
+        <StatCard
+          label="Production achievement"
+          value={`${s?.achievement ?? 0}%`}
+          hint={
+            <>
+              <ClientOnly fallback={<span>{formatNumber(s?.produced ?? 0)}</span>}>
+                {(s?.produced ?? 0).toLocaleString()}
+              </ClientOnly>{" "}
+              of{" "}
+              <ClientOnly fallback={<span>{formatNumber(s?.target ?? 0)}</span>}>
+                {(s?.target ?? 0).toLocaleString()}
+              </ClientOnly>{" "}
+              units
+            </>
+          }
+          tone="success"
+        />
+        <StatCard
+          label="Downtime"
+          value={`${s?.downtime ?? 0} min`}
+          hint={`Across ${s?.lineCount ?? 0} active lines`}
+          tone="warning"
+        />
+        <StatCard
+          label="Active issues"
+          value={s?.activeIssues ?? 0}
+          hint={`${s?.unresolved ?? 0} unresolved`}
+          tone="danger"
+        />
+        <StatCard
+          label="RCA pending"
+          value={s?.rcaPending ?? 0}
+          hint={`${s?.quality ?? 0} quality events today`}
+        />
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-3">
@@ -186,9 +208,12 @@ function Dashboard() {
                   <p className="text-sm font-medium">{e.description}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {e.line_name} · {e.event_type} / {e.category} · {e.team_name}
+                    {e.operator_name ? ` · logged by ${e.operator_name}` : ""}
                   </p>
                 </div>
-                <SourceBadge>{SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}</SourceBadge>
+                <SourceBadge>
+                  {SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}
+                </SourceBadge>
               </li>
             ))}
           </ul>

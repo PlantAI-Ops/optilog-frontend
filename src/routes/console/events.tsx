@@ -11,7 +11,16 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-const TYPES = ["all", "downtime", "breakdown", "quality", "maintenance", "safety", "observation", "environmental"] as const;
+const TYPES = [
+  "all",
+  "downtime",
+  "breakdown",
+  "quality",
+  "maintenance",
+  "safety",
+  "observation",
+  "environmental",
+] as const;
 const SOURCES = ["all", "operator", "supervisor", "mes", "scada", "cmms", "erp"] as const;
 
 export const Route = createFileRoute("/console/events")({
@@ -92,6 +101,7 @@ function EventsPage() {
               <th className="px-4 py-2 text-left font-medium">Line / asset</th>
               <th className="px-4 py-2 text-left font-medium">Type</th>
               <th className="px-4 py-2 text-left font-medium">Status</th>
+              <th className="px-4 py-2 text-left font-medium">Operator</th>
               <th className="px-4 py-2 text-right font-medium">Source</th>
             </tr>
           </thead>
@@ -115,8 +125,11 @@ function EventsPage() {
                   <td className="px-4 py-3 text-muted-foreground">
                     {STATUS_LABEL[e.status as keyof typeof STATUS_LABEL] ?? e.status}
                   </td>
+                  <td className="px-4 py-3 text-muted-foreground">{e.operator_name ?? "—"}</td>
                   <td className="px-4 py-3 text-right">
-                    <SourceBadge>{SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}</SourceBadge>
+                    <SourceBadge>
+                      {SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}
+                    </SourceBadge>
                   </td>
                 </tr>
                 {openId === e.id ? (
@@ -132,12 +145,19 @@ function EventsPage() {
                         <dl className="space-y-2 text-xs">
                           <Row k="Team" v={e.team_name} />
                           <Row k="Severity" v={e.severity} />
-                          <Row k="Source record" v={`${SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source} · ${e.source_record_id}`} />
+                          <Row k="Operator" v={e.operator_name ?? "—"} />
+                          <Row
+                            k="Source record"
+                            v={`${SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source} · ${e.source_record_id}`}
+                          />
                           <Row k="Evidence" v={e.evidence.join(", ")} />
-                          <Row k="Incident" v={e.incident_id ?? ""} />
+                          <Row k="Incident" v={e.incident_ref ?? e.incident_id ?? ""} />
                         </dl>
                       </div>
-                      {e.event_type === "breakdown" && canCreateRCA && !e.incident_id && e.status !== "escalated" ? (
+                      {e.event_type === "breakdown" &&
+                      canCreateRCA &&
+                      !e.incident_id &&
+                      e.status !== "escalated" ? (
                         <div className="mt-4 border-t border-border/60 pt-3">
                           <button
                             type="button"
@@ -146,8 +166,7 @@ function EventsPage() {
                               createRCAFromEvent.mutate(
                                 { eventId: e.id },
                                 {
-                                  onSuccess: () =>
-                                    navigate({ to: "/console/rca" }),
+                                  onSuccess: () => navigate({ to: "/console/rca" }),
                                 },
                               );
                             }}

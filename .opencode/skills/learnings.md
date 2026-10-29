@@ -1296,3 +1296,78 @@ const updateRing = () => {
 - `end-shift` summary regeneration is not offered in the UI yet (`regenerate` param exists server-side only) — add a "Regenerate" affordance if supervisors ask.
 - Live read-only check (supervisor token minted in-process, no DB writes): `/shifts/report-approvals` 200 with all new keys present (values empty on the current 0-event dev shift; derivation is covered by tests), `/my-events` 200.
 - Gates: backend `pytest tests -q` = **330 passed**; frontend `npm run typecheck` clean, `npx eslint --fix` on touched files → only the 3 pre-existing `any`s in `hooks.ts` (now 624/658/1100), `npm run build` exit 0.
+
+---
+
+## 2026-10-28: Event → Maintenance Flow Sync Fix
+
+**Context:** Fixed critical frontend/backend sync issues in the planned maintenance feature. The maintenance page was completely broken due to API contract mismatches.
+
+**Decisions:**
+- Backend: Enhanced GET /plants/{plant_id}/planned-maintenance endpoint to include 11 missing fields (line, shift, team, severity, observation, etc.)
+- Backend: Added is_auto_routed flag to distinguish auto-created vs supervisor-planned maintenance items
+- Frontend: Rewrote PlannedMaintenanceItem interface to match actual backend response shape
+- Frontend: Fixed API endpoints - replaced non-existent /plants/{id}/planned-maintenance/{eventId} with correct /actions/{action_id} endpoints
+- Frontend: Added unwrapping of response envelope ({month, total, items[]} → items[])
+- Frontend: Implemented day/week/month views using proper backend endpoints instead of client-side filtering
+- Frontend: Added visual "⚡ Auto-routed" badge for auto-created maintenance items
+
+**Gotchas:**
+- Backend returns {month, total, items[]} envelope, NOT a flat array - always unwrap with `res?.items ?? []`
+- Action endpoints are at /actions/{id} not /plants/{id}/planned-maintenance/{id}
+- POST /shifts/{id}/events/{id}/plan-maintenance DOES still exist (create-only, body: planned_date/notes/assigned_team) - only the old PATCH/complete under /plants/.../planned-maintenance/ were dead
+- scheduled_date is ISO datetime string, not just date - use .slice(0, 10) for grouping
+- Auto-routed items have due_date: None - this is how we detect is_auto_routed: true
+- POST /actions/{id}/complete only updates action status, event status remains unchanged (by design)
+- Week/day endpoints exist at /planned-maintenance/week?date= and /planned-maintenance/day?date=
+- ConsoleShell maintenance badge must exclude BOTH "completed" and "cancelled", otherwise cancelled items inflate the count
+
+**Pattern: Unwrapping paginated API responses**
+```ts
+export function usePlannedMaintenance(plantId: string | undefined, month: string) {
+  return useQuery({
+    queryKey: ["planned-maintenance", plantId, "month", month],
+    queryFn: async () => {
+      const res = await api.get<{ month: string; total: number; items: PlannedMaintenanceItem[] }>(
+        `/plants/${plantId}/planned-maintenance?month=${month}`,
+      );
+      return res?.items ?? [];  // Unwrap envelope
+    },
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
+}
+```
+
+**Pattern: Action-based mutations (not plant-based)**
+```ts
+export function useCompletePlannedMaintenance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ actionId }: { actionId: string }) =>
+      api.post(`/actions/${actionId}/complete`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["planned-maintenance"] });
+    },
+  });
+}
+```
+
+**Field mapping (old → new):**
+- planned_date → scheduled_date
+- maintenance_notes → notes
+- assigned_team → assigned_to_name (user, not team)
+- Missing: line_id/name, shift_id/name, team_id/name, severity, event_type, observation, reported_cause, suspected_cause, logged_by, created_at, is_auto_routed
+
+**Files changed:**
+- Backend: app/domain/dashboard/service.py (enhanced _get_planned_maintenance_range())
+- Frontend: src/lib/hooks.ts (updated interface + 4 hooks)
+- Frontend: src/routes/console/maintenance.tsx (complete rewrite)
+- Frontend: src/components/console/ConsoleShell.tsx (maintenance + RCA nav badges)
+
+**Verification:**
+- ✅ Backend pytest tests -q → 344 passed
+- ✅ TypeScript compilation passes (`npx tsc --noEmit`)
+- ✅ Full build (client + SSR + Nitro) exit 0
+- ✅ `npx eslint --fix` on touched files → only the 3 pre-existing `any`s in hooks.ts (now 671/705/1147)
+- ⏳ End-to-end testing pending (needs running backend)

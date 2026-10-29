@@ -69,6 +69,7 @@ export interface EventRow {
   source_record_id: string;
   evidence: string[];
   incident_id: string | null;
+  incident_ref?: string;
   /** Where it happened (enriched by the API; missing on older rows). */
   area_id?: string;
   area_name?: string;
@@ -80,6 +81,7 @@ export interface EventRow {
 export interface IncidentRow {
   id: string;
   ref: string;
+  incident_ref?: string;
   title: string;
   line_id: string;
   line_name: string;
@@ -95,6 +97,7 @@ export interface IncidentRow {
 export interface RCARow {
   id: string;
   incident_id: string;
+  incident_ref?: string;
   problem: string;
   observed_condition: string;
   root_cause: string;
@@ -107,6 +110,50 @@ export interface RCARow {
   status: string;
   created_at: string;
   updated_at: string;
+  // Enhanced RCA fields for traceability
+  investigation_start?: string;
+  investigation_priority?: "low" | "medium" | "high" | "critical";
+  investigation_owner?: string;
+  investigation_created?: string;
+  five_why_started?: string;
+  root_cause_identified?: string;
+  corrective_actions_assigned?: string;
+  investigation_completed?: string;
+  contribution_logs?: RCARowContributionLog[];
+}
+
+export interface RCARowContributionLog {
+  id: string;
+  rca_id: string;
+  timestamp: string;
+  contributor: string;
+  contributor_role: string;
+  contribution_type: "finding" | "evidence" | "action_assignment" | "status_change" | "note";
+  content: string;
+  evidence_ids?: string[];
+  action_id?: string;
+}
+
+export interface RCAAction {
+  id: string;
+  incident_id: string;
+  action_type: "corrective" | "preventive" | "verification" | "monitoring";
+  description: string;
+  assignees: string[];
+  due_date: string;
+  status:
+    | "draft"
+    | "assigned"
+    | "in_progress"
+    | "verification_required"
+    | "completed"
+    | "verified"
+    | "closed";
+  evidence_required: boolean;
+  owner: string;
+  created_at: string;
+  completed_at?: string;
+  verification_evidence_id?: string;
 }
 
 export interface AssetRollupRow {
@@ -1125,29 +1172,70 @@ export function useMyEvents(plantId: string | undefined, date: string, shiftId?:
 /* -------------------------------------------------------------------------- */
 
 export interface PlannedMaintenanceItem {
+  id: string;
+  source: "action" | "event";
   event_id: string;
-  shift_id: string;
-  planned_date: string;
-  maintenance_notes: string;
-  assigned_team: string;
-  event_type: string;
-  observation: string;
-  reported_cause: string;
-  suspected_cause: string;
-  severity: string;
-  asset_name: string;
-  line_name: string;
-  shift_name: string;
-  team_name: string;
-  logged_by: string;
-  created_at: string;
+  action_id: string;
+  scheduled_date: string;
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+  notes: string;
+  asset_id?: string;
+  asset_name?: string;
+  line_id?: string;
+  line_name?: string;
+  shift_id?: string;
+  shift_name?: string;
+  team_id?: string;
+  team_name?: string;
+  assigned_to?: string;
+  assigned_to_name?: string;
+  event_type?: string;
+  severity?: string;
+  observation?: string;
+  reported_cause?: string;
+  suspected_cause?: string;
+  logged_by?: string;
+  created_at?: string;
+  is_auto_routed?: boolean;
 }
 
 export function usePlannedMaintenance(plantId: string | undefined, month: string) {
   return useQuery({
-    queryKey: ["planned-maintenance", plantId, month],
-    queryFn: () =>
-      api.get<PlannedMaintenanceItem[]>(`/plants/${plantId}/planned-maintenance?month=${month}`),
+    queryKey: ["planned-maintenance", plantId, "month", month],
+    queryFn: async () => {
+      const res = await api.get<{ month: string; total: number; items: PlannedMaintenanceItem[] }>(
+        `/plants/${plantId}/planned-maintenance?month=${month}`,
+      );
+      return res?.items ?? [];
+    },
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
+}
+
+export function usePlannedMaintenanceWeek(plantId: string | undefined, date: string) {
+  return useQuery({
+    queryKey: ["planned-maintenance", plantId, "week", date],
+    queryFn: async () => {
+      const res = await api.get<{ month: string; total: number; items: PlannedMaintenanceItem[] }>(
+        `/plants/${plantId}/planned-maintenance/week?date=${date}`,
+      );
+      return res?.items ?? [];
+    },
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
+}
+
+export function usePlannedMaintenanceDay(plantId: string | undefined, date: string) {
+  return useQuery({
+    queryKey: ["planned-maintenance", plantId, "day", date],
+    queryFn: async () => {
+      const res = await api.get<{ month: string; total: number; items: PlannedMaintenanceItem[] }>(
+        `/plants/${plantId}/planned-maintenance/day?date=${date}`,
+      );
+      return res?.items ?? [];
+    },
     enabled: !!plantId,
     staleTime: STALE_TIME,
   });
@@ -1176,8 +1264,8 @@ export function usePlanMaintenance() {
         notes,
         assigned_team: assignedTeam,
       }),
-    onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ["planned-maintenance", variables.plantId] });
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["planned-maintenance"] });
     },
   });
 }
@@ -1186,16 +1274,14 @@ export function useUpdatePlannedMaintenance() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
-      plantId,
-      eventId,
+      actionId,
       patch,
     }: {
-      plantId: string;
-      eventId: string;
-      patch: { planned_date?: string; maintenance_notes?: string; status?: string };
-    }) => api.patch(`/plants/${plantId}/planned-maintenance/${eventId}`, patch),
-    onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ["planned-maintenance", variables.plantId] });
+      actionId: string;
+      patch: { due_date?: string; status?: string };
+    }) => api.patch(`/actions/${actionId}`, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["planned-maintenance"] });
     },
   });
 }
@@ -1203,10 +1289,9 @@ export function useUpdatePlannedMaintenance() {
 export function useCompletePlannedMaintenance() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ plantId, eventId }: { plantId: string; eventId: string }) =>
-      api.post(`/plants/${plantId}/planned-maintenance/${eventId}/complete`),
-    onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ["planned-maintenance", variables.plantId] });
+    mutationFn: ({ actionId }: { actionId: string }) => api.post(`/actions/${actionId}/complete`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["planned-maintenance"] });
     },
   });
 }

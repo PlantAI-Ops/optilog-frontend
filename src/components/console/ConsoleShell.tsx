@@ -25,6 +25,9 @@ import {
   useReportApprovals,
   useShiftsNow,
   useLessonsToReview,
+  usePlantSummary,
+  useIncidents,
+  usePlannedMaintenance,
 } from "@/lib/hooks";
 import { UNRESOLVED_STATUSES, todayStr } from "@/lib/ops-model";
 import { formatWindow, shiftLabel } from "@/lib/shift-now";
@@ -102,6 +105,16 @@ export function ConsoleShell({
   const lessonsToReview = useLessonsToReview(plantId, isSupervisor);
   const reportsBadge = pendingReports + openEvents;
   const vocabularyBadge = lessonsToReview.total;
+  // Maintenance badge: items not yet completed (status not "completed")
+  const todayMonth = todayStr().slice(0, 7);
+  const plannedMaintenance = usePlannedMaintenance(plantId, todayMonth);
+  const maintenanceBadge = Array.isArray(plannedMaintenance.data)
+    ? plannedMaintenance.data.filter((i) => i.status !== "completed" && i.status !== "cancelled")
+        .length
+    : 0;
+  // RCA badge: unresolved incidents (open, in_progress, under_review)
+  const unresolvedIncidents = useIncidents(plantId, "open,in_progress,under_review");
+  const rcaBadge = Array.isArray(unresolvedIncidents.data) ? unresolvedIncidents.data.length : 0;
   const navItems: NavItem[] = NAV.filter(
     (item) => !item.minRole || (user && hasMinRole(user.role, item.minRole)),
   ).map((item) => {
@@ -110,7 +123,11 @@ export function ConsoleShell({
         ? reportsBadge
         : item.to === "/console/vocabulary"
           ? vocabularyBadge
-          : 0;
+          : item.to === "/console/maintenance"
+            ? maintenanceBadge
+            : item.to === "/console/rca"
+              ? rcaBadge
+              : 0;
     return badge > 0 ? { ...item, badge } : item;
   });
   // Plant tabs are dead weight for accounts with no plant (system_admin).
