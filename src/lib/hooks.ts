@@ -1264,8 +1264,11 @@ export function usePlanMaintenance() {
         notes,
         assigned_team: assignedTeam,
       }),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["planned-maintenance"] });
+      // The event flips to planned_maintenance server-side — refresh the
+      // events list so buttons/labels update without waiting for staleTime.
+      qc.invalidateQueries({ queryKey: ["dashboard", variables.plantId, "events"] });
     },
   });
 }

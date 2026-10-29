@@ -1371,3 +1371,28 @@ export function useCompletePlannedMaintenance() {
 - ✅ Full build (client + SSR + Nitro) exit 0
 - ✅ `npx eslint --fix` on touched files → only the 3 pre-existing `any`s in hooks.ts (now 671/705/1147)
 - ⏳ End-to-end testing pending (needs running backend)
+
+---
+
+## 2026-10-29: Manual Maintenance Routing — Details + Events Page
+
+**Context:** Supplemented the Event → Maintenance sync fix with full manual-routing support: richer dialog details, a fourth routing surface, and documentation.
+
+**Decisions:**
+- Extended `PlanMaintenanceIssue` with optional `type`/`line`/`reported_cause`/`logged_by`/`timestamp` — all callers still pass title/subtitle, so no break
+- Optional fields typed `string | undefined` (not just `?`) because `exactOptionalPropertyTypes: true` rejects explicit `undefined`
+- Added "Push to maintenance" to Console → Events expanded rows, gated on supervisor && status ∉ {planned_maintenance, resolved}; kept the existing Create RCA button alongside it
+- `usePlanMaintenance` now also invalidates `["dashboard", plantId, "events"]` on success — previously the Push button label went stale until `staleTime` expired (pre-existing Reports bug too)
+- Manual routing works for ANY event type; auto-routing only covers `observation`
+- Documented the whole flow in `EVENT_MAINTENANCE_FLOW_SYNC_FIX.md` (kept at repo root, not deleted)
+
+**Gotchas:**
+- Console Events table has 7 columns — the detail/empty rows need `colSpan={7}` (was 6 after the Operator column was added)
+- `plan_maintenance_for_event` is idempotent: manual push after auto-route UPDATES the existing action's due_date, never duplicates
+- Events-page routing needs no manual `saveEvent` status flip — the backend already sets `planned_maintenance` (mobile does it only to sync the local store)
+- Dialog timestamp uses `toLocaleString` safely because the dialog only mounts after a click (no SSR hydration mismatch)
+
+**Verification:**
+- ✅ `npm run typecheck` clean
+- ✅ `npx eslint --fix` on touched files → only the 3 pre-existing `any`s in hooks.ts
+- ✅ `npm run build` exit 0

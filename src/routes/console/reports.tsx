@@ -478,6 +478,11 @@ function ReportsPage() {
           issue={{
             title: planRow.description || planRow.observation || planRow.event_type,
             subtitle: `${planRow.asset_name} · ${planRow.severity}`,
+            type: planRow.event_type,
+            line: planRow.line_name,
+            reported_cause: planRow.reported_cause,
+            logged_by: planRow.operator_name,
+            timestamp: planRow.timestamp,
           }}
           date={planDate}
           notes={planNotes}
