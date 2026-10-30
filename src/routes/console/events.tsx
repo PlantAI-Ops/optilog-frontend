@@ -161,6 +161,7 @@ function EventsPage() {
                     </td>
                     <td className="px-4 py-3 font-medium">{e.description}</td>
                     <td className="px-4 py-3 text-muted-foreground">
+                      {e.area_name ? `${e.area_name} · ` : ""}
                       {e.line_name} · {e.asset_name}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">

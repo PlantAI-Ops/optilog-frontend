@@ -50,6 +50,10 @@ async function apiFetch<T = unknown>(method: string, path: string, body?: unknow
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
+  // ngrok free-plan browser warning (ERR_NGROK_6024) answers browser-UA fetches
+  // with 200 text/plain, which would silently parse as "data". Ignored elsewhere.
+  if (typeof window !== "undefined" && window.location.hostname.includes("ngrok"))
+    headers["ngrok-skip-browser-warning"] = "true";
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
@@ -108,6 +112,8 @@ export async function postFormData<T = unknown>(path: string, formData: FormData
   const token = getToken();
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (typeof window !== "undefined" && window.location.hostname.includes("ngrok"))
+    headers["ngrok-skip-browser-warning"] = "true";
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method: "POST",

@@ -1,21 +1,41 @@
 import { useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { ChevronDown, Loader2, Pencil, Plus, Save, Sparkles, Check } from "lucide-react";
+import {
+  ChevronDown,
+  Loader2,
+  Pencil,
+  Plus,
+  Save,
+  Sparkles,
+  Check,
+  ShieldAlert,
+  RefreshCw,
+} from "lucide-react";
 import { ConsoleShell, SourceBadge, StatCard } from "@/components/console/ConsoleShell";
-import { SOURCE_LABEL, STATUS_LABEL } from "@/lib/ops-model";
+import { SOURCE_LABEL, STATUS_LABEL, areas, lines } from "@/lib/ops-model";
 import { ApiError } from "@/lib/api";
 import { hasMinRole, useShiftLog } from "@/lib/shift-log";
 import {
   useApproveRCA,
+  useCloseRCA,
   useCreateRCA,
   useCreateRCAFromEvent,
   useEvents,
   useIncidentEvents,
   useIncidentRCA,
   useIncidents,
+  useReopenRCA,
+  useRCAActions,
   useUpdateRCA,
   type RCARow,
 } from "@/lib/hooks";
+import { RcaStepper, STEPS, type StepId } from "@/components/rca/RcaStepper";
+import { RcaBackgroundCard } from "@/components/rca/RcaBackgroundCard";
+import { FiveWhyEditor } from "@/components/rca/FiveWhyEditor";
+import { FishboneEditor } from "@/components/rca/FishboneEditor";
+import { TimelineEditor } from "@/components/rca/TimelineEditor";
+import { EvidenceEditor } from "@/components/rca/EvidenceEditor";
+import { RcaActionsCard } from "@/components/rca/RcaActionsCard";
 
 export const Route = createFileRoute("/console/rca")({
   validateSearch: (search: Record<string, unknown>): { incident?: string | undefined } => ({
@@ -42,12 +62,12 @@ export const Route = createFileRoute("/console/rca")({
 function RcaPage() {
   const user = useShiftLog().user;
   const plantId = user?.plant_ids?.[0];
-  // Deep link (?incident=…) — the Reports queue drops the supervisor on the
-  // incident it just opened an RCA for.
   const search = Route.useSearch();
 
   const [selectedId, setSelectedId] = useState<string | null>(search["incident"] ?? null);
   const [editing, setEditing] = useState(false);
+  const [currentStep, setCurrentStep] = useState<StepId>("background");
+  const [completedSteps, setCompletedSteps] = useState<Set<StepId>>(new Set());
   const [form, setForm] = useState<Partial<RCARow>>({});
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -61,13 +81,20 @@ function RcaPage() {
   const createRCA = useCreateRCA();
   const updateRCA = useUpdateRCA();
   const approveRCA = useApproveRCA();
+  const closeRCA = useCloseRCA();
+  const reopenRCA = useReopenRCA();
   const createRCAFromEvent = useCreateRCAFromEvent();
+  const rcaActions = useRCAActions(currentId);
   const breakdownEvents = useEvents(plantId, new Date().toISOString().slice(0, 10), {
     type: "breakdown",
   });
 
-  const hasRCA = !!rca.data;
+  const hasRCA = !!rca.data?.id && rca.data.status !== "draft";
   const isDraft = rca.data?.status === "draft";
+  const isInProgress = rca.data?.status === "in_progress";
+  const isCompleted = rca.data?.status === "completed";
+  const isApproved = rca.data?.status === "approved";
+  const isClosed = rca.data?.status === "closed";
   const canCreateRCA = hasMinRole(user?.role ?? "operator", "supervisor");
   const unlinkedBreakdowns = breakdownEvents.data?.filter((e) => !e.incident_id) ?? [];
 
@@ -101,6 +128,38 @@ function RcaPage() {
 
   const incidentsData = incidents.data ?? [];
 
+  const canStartInvestigation = () => {
+    if (
+      !currentId ||
+      isInProgress ||
+      isCompleted ||
+      isApproved ||
+      isClosed ||
+      !isDraft ||
+      !canCreateRCA
+    )
+      return false;
+    return true;
+  };
+
+  const canSubmitForReview = () => {
+    if (!isInProgress || isCompleted || isApproved || isClosed || !canCreateRCA || editing)
+      return false;
+    return true;
+  };
+
+  const canApprove = () => {
+    return canCreateRCA && isCompleted;
+  };
+
+  const canClose = () => {
+    return canCreateRCA && isApproved;
+  };
+
+  const canReopen = () => {
+    return canCreateRCA && isClosed;
+  };
+
   const handleStartInvestigation = () => {
     if (!currentId) return;
     createRCA.mutate(
@@ -109,9 +168,16 @@ function RcaPage() {
         onSuccess: () => {
           setEditing(true);
           setForm({});
+          setCurrentStep("background");
+          setCompletedSteps(new Set());
         },
       },
     );
+  };
+
+  const handleSubmitForReview = () => {
+    if (!rca.data) return;
+    updateRCA.mutate({ rcaId: rca.data.id, data: { status: "in_progress" } });
   };
 
   const handleSave = () => {
@@ -119,20 +185,65 @@ function RcaPage() {
     updateRCA.mutate({ rcaId: rca.data.id, data: form }, { onSuccess: () => setEditing(false) });
   };
 
-  const handleApprove = () => {
-    if (!rca.data) return;
-    approveRCA.mutate(rca.data.id);
-  };
-
   const startEditing = () => {
-    setForm({
+    const formData: Partial<RCARow> = {
       problem: rca.data?.problem ?? "",
       observed_condition: rca.data?.observed_condition ?? "",
       root_cause: rca.data?.root_cause ?? "",
       corrective_action: rca.data?.corrective_action ?? "",
       preventive_action: rca.data?.preventive_action ?? "",
-    });
+      five_why: rca.data?.five_why ?? [],
+      timeline: rca.data?.timeline ?? [],
+      evidence: rca.data?.evidence ?? [],
+      fishbone: rca.data?.fishbone ?? [],
+    };
+    if (rca.data?.containment_action !== undefined) {
+      formData.containment_action = rca.data.containment_action;
+    }
+    if (rca.data?.root_cause_category !== undefined) {
+      formData.root_cause_category = rca.data.root_cause_category;
+    }
+    setForm(formData);
     setEditing(true);
+  };
+
+  const canCreateNewRCA = () => {
+    return canCreateRCA && !isInProgress && !isCompleted && !isApproved && !isClosed;
+  };
+
+  const canEdit = () => {
+    return canCreateRCA && (isDraft || isInProgress || isCompleted) && !editing;
+  };
+
+  const canSave = () => {
+    return canCreateRCA && editing;
+  };
+
+  const handleApprove = () => {
+    if (!rca.data) return;
+    approveRCA.mutate(rca.data.id);
+  };
+
+  const handleClose = () => {
+    if (!rca.data) return;
+    closeRCA.mutate(rca.data.id);
+  };
+
+  const handleReopen = () => {
+    if (!rca.data) return;
+    reopenRCA.mutate(rca.data.id);
+  };
+
+  const stepDisabled = (stepId: StepId) => {
+    const stepIndex = STEPS.findIndex((s) => s.id === stepId);
+    const currentIndex = STEPS.findIndex((s) => s.id === currentStep);
+    return stepIndex > currentIndex && !completedSteps.has(stepId);
+  };
+
+  const handleStepClick = (stepId: StepId) => {
+    if (!stepDisabled(stepId)) {
+      setCurrentStep(stepId);
+    }
   };
 
   return (
@@ -185,6 +296,7 @@ function RcaPage() {
                             >
                               <p className="text-xs font-medium">{e.description}</p>
                               <p className="mt-0.5 text-xs text-muted-foreground">
+                                {e.area_name ? `${e.area_name} · ` : ""}
                                 {e.line_name} · {e.timestamp.slice(11, 16)} ·{" "}
                                 {SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}
                               </p>
@@ -217,6 +329,7 @@ function RcaPage() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     {i.line_name} · {i.duration_minutes} min ·{" "}
                     {STATUS_LABEL[i.status as keyof typeof STATUS_LABEL] ?? i.status}
+                    {i.severity ? ` · ${i.severity}` : ""}
                   </p>
                 </button>
               </li>
@@ -249,24 +362,26 @@ function RcaPage() {
                 <div className="flex items-center justify-center rounded-xl border border-border bg-card py-10">
                   <Loader2 className="size-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : !hasRCA ? (
+              ) : !rca.data ? (
                 <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
                   <p className="text-sm text-muted-foreground">
                     No investigation started for this incident.
                   </p>
-                  <button
-                    type="button"
-                    onClick={handleStartInvestigation}
-                    disabled={createRCA.isPending}
-                    className="mt-4 flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
-                  >
-                    {createRCA.isPending ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Sparkles className="size-4" />
-                    )}
-                    Start Investigation
-                  </button>
+                  {canStartInvestigation() ? (
+                    <button
+                      type="button"
+                      onClick={handleStartInvestigation}
+                      disabled={createRCA.isPending}
+                      className="mt-4 flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+                    >
+                      {createRCA.isPending ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="size-4" />
+                      )}
+                      Start Investigation
+                    </button>
+                  ) : null}
                 </div>
               ) : (
                 <>
@@ -278,12 +393,16 @@ function RcaPage() {
                             ? "bg-success/20 text-success"
                             : rca.data.status === "completed"
                               ? "bg-primary/20 text-primary"
-                              : "bg-secondary text-secondary-foreground"
+                              : rca.data.status === "closed"
+                                ? "bg-warning/20 text-warning"
+                                : rca.data.status === "in_progress"
+                                  ? "bg-info/20 text-info"
+                                  : "bg-secondary text-secondary-foreground"
                         }`}
                       >
                         {rca.data.status}
                       </span>
-                      {rca.data.ai_insight ? (
+                      {rca.data.ai_insight && currentStep === "review" ? (
                         <div className="flex gap-2 rounded-xl border border-primary/40 bg-primary/10 px-3 py-2">
                           <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
                           <p className="text-xs text-foreground/90">{rca.data.ai_insight}</p>
@@ -291,7 +410,7 @@ function RcaPage() {
                       ) : null}
                     </div>
                     <div className="flex gap-2">
-                      {!editing && isDraft ? (
+                      {canEdit() && !isClosed ? (
                         <button
                           type="button"
                           onClick={startEditing}
@@ -300,7 +419,7 @@ function RcaPage() {
                           <Pencil className="size-3" /> Edit
                         </button>
                       ) : null}
-                      {editing ? (
+                      {editing && canSave() ? (
                         <button
                           type="button"
                           onClick={handleSave}
@@ -315,7 +434,22 @@ function RcaPage() {
                           Save
                         </button>
                       ) : null}
-                      {rca.data.status === "completed" ? (
+                      {canSubmitForReview() ? (
+                        <button
+                          type="button"
+                          onClick={handleSubmitForReview}
+                          disabled={updateRCA.isPending}
+                          className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+                        >
+                          {updateRCA.isPending ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <Check className="size-3" />
+                          )}
+                          Submit for Review
+                        </button>
+                      ) : null}
+                      {canApprove() ? (
                         <button
                           type="button"
                           onClick={handleApprove}
@@ -330,103 +464,180 @@ function RcaPage() {
                           Approve
                         </button>
                       ) : null}
+                      {canClose() ? (
+                        <button
+                          type="button"
+                          onClick={handleClose}
+                          disabled={closeRCA.isPending}
+                          className="flex items-center gap-1.5 rounded-lg bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground disabled:opacity-60"
+                        >
+                          {closeRCA.isPending ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <ShieldAlert className="size-3" />
+                          )}
+                          Close
+                        </button>
+                      ) : null}
+                      {canReopen() ? (
+                        <button
+                          type="button"
+                          onClick={handleReopen}
+                          disabled={reopenRCA.isPending}
+                          className="flex items-center gap-1.5 rounded-lg bg-info px-3 py-1.5 text-xs font-semibold text-info-foreground disabled:opacity-60"
+                        >
+                          {reopenRCA.isPending ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <RefreshCw className="size-3" />
+                          )}
+                          Reopen
+                        </button>
+                      ) : null}
                     </div>
                   </div>
+
+                  {/* Stepper - show when RCA exists */}
+                  <RcaStepper
+                    currentStep={currentStep}
+                    completedSteps={completedSteps}
+                    onStepClick={handleStepClick}
+                    onNext={() => {
+                      const currentIndex = STEPS.findIndex((s) => s.id === currentStep);
+                      const nextStep = STEPS[currentIndex + 1];
+                      if (nextStep) {
+                        setCompletedSteps((prev) => new Set([...prev, currentStep]));
+                        setCurrentStep(nextStep.id);
+                      }
+                    }}
+                    onPrev={() => {
+                      const currentIndex = STEPS.findIndex((s) => s.id === currentStep);
+                      const prevStep = STEPS[currentIndex - 1];
+                      if (prevStep) {
+                        setCurrentStep(prevStep.id);
+                      }
+                    }}
+                  />
 
                   <div className="grid gap-6 lg:grid-cols-2">
-                    <div className="rounded-xl border border-border bg-card p-4">
-                      <h2 className="text-sm font-semibold">Timeline</h2>
-                      <ol className="mt-3 space-y-3">
-                        {rca.data.timeline?.map((t) => (
-                          <li key={`${t.time}-${t.label}`} className="flex gap-3">
-                            <span className="w-12 shrink-0 text-xs tabular-nums text-muted-foreground">
-                              {t.time}
-                            </span>
-                            <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" />
-                            <span className="flex-1 text-sm">{t.label}</span>
-                            <SourceBadge>
-                              {SOURCE_LABEL[t.source as keyof typeof SOURCE_LABEL] ?? t.source}
-                            </SourceBadge>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
+                    {/* Background Card (Step 1) */}
+                    {currentStep === "background" && (
+                      <div className="col-span-2 rounded-xl border border-border bg-card p-4">
+                        <RcaBackgroundCard
+                          rca={editing ? ({ ...rca.data, ...form } as RCARow) : rca.data}
+                          editing={editing}
+                          incidentLine={incident?.line_name ?? null}
+                          incidentShift={incident?.shift_name ?? null}
+                          incidentArea={
+                            incident
+                              ? (areas.find(
+                                  (a) =>
+                                    a.id === lines.find((l) => l.id === incident.line_id)?.area_id,
+                                )?.name ?? null)
+                              : null
+                          }
+                          onChange={(field, value) => {
+                            setForm((prev) => ({ ...prev, [field]: value }));
+                          }}
+                        />
+                      </div>
+                    )}
 
-                    <div className="rounded-xl border border-border bg-card p-4">
-                      <h2 className="text-sm font-semibold">Evidence</h2>
-                      <ul className="mt-3 space-y-2">
-                        {rca.data.evidence?.map((e) => (
-                          <li
-                            key={e.label}
-                            className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
-                          >
-                            {e.label}
-                            <SourceBadge>
-                              {SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}
-                            </SourceBadge>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                    {/* 5-Why (Step 2) */}
+                    {currentStep === "five_why" && (
+                      <div className="col-span-2 rounded-xl border border-border bg-card p-4">
+                        <FiveWhyEditor
+                          steps={
+                            editing && form.five_why ? form.five_why : (rca.data?.five_why ?? [])
+                          }
+                          onChange={(steps) => setForm((f) => ({ ...f, five_why: steps }))}
+                          editing={editing}
+                        />
+                      </div>
+                    )}
+
+                    {/* Fishbone (Step 3) */}
+                    {currentStep === "fishbone" && (
+                      <div className="col-span-2 rounded-xl border border-border bg-card p-4">
+                        <FishboneEditor
+                          entries={
+                            editing && form.fishbone ? form.fishbone : (rca.data?.fishbone ?? [])
+                          }
+                          onChange={(entries) => setForm((f) => ({ ...f, fishbone: entries }))}
+                          editing={editing}
+                        />
+                      </div>
+                    )}
+
+                    {/* Timeline (Step 4) */}
+                    {currentStep === "timeline" && (
+                      <div className="col-span-2 rounded-xl border border-border bg-card p-4">
+                        <TimelineEditor
+                          entries={
+                            editing && form.timeline ? form.timeline : (rca.data?.timeline ?? [])
+                          }
+                          onChange={(entries) => setForm((f) => ({ ...f, timeline: entries }))}
+                          editing={editing}
+                        />
+                      </div>
+                    )}
+
+                    {/* Evidence (Step 4) */}
+                    {currentStep === "evidence" && (
+                      <div className="col-span-2 rounded-xl border border-border bg-card p-4">
+                        <EvidenceEditor
+                          entries={
+                            editing && form.evidence ? form.evidence : (rca.data?.evidence ?? [])
+                          }
+                          onChange={(entries) => setForm((f) => ({ ...f, evidence: entries }))}
+                          editing={editing}
+                        />
+                      </div>
+                    )}
+
+                    {/* Actions (Step 5) */}
+                    {currentStep === "actions" && (
+                      <div className="col-span-2 rounded-xl border border-border bg-card p-4">
+                        <RcaActionsCard incidentId={currentId ?? ""} actions={rcaActions.data} />
+                      </div>
+                    )}
+
+                    {/* Review (Step 6) */}
+                    {currentStep === "review" && (
+                      <div className="col-span-2 rounded-xl border border-border bg-card p-4">
+                        <div className="space-y-4">
+                          <div>
+                            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
+                              RCA Status & Actions
+                            </h3>
+                            <p className="text-sm">
+                              Current status:{" "}
+                              <span className="font-medium capitalize">{rca.data.status}</span>
+                            </p>
+                            {rca.data.ai_insight && (
+                              <div className="mt-3 rounded-lg border border-primary/40 bg-primary/10 p-3">
+                                <p className="text-xs font-medium uppercase tracking-wide text-primary mb-1">
+                                  AI Insight
+                                </p>
+                                <p className="text-sm text-foreground/90 whitespace-pre-line">
+                                  {rca.data.ai_insight}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          {editing && (
+                            <div className="pt-4">
+                              <p className="text-xs text-muted-foreground">
+                                Save changes to finalize the review.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="rounded-xl border border-border bg-card p-4">
-                    <h2 className="text-sm font-semibold">Investigation</h2>
-                    <dl className="mt-3 grid gap-3 md:grid-cols-3">
-                      <Field
-                        label="Problem"
-                        value={editing ? (form.problem ?? "") : rca.data.problem}
-                        editing={editing}
-                        onChange={(v) => setForm((f) => ({ ...f, problem: v }))}
-                      />
-                      <Field
-                        label="Observed condition"
-                        value={
-                          editing ? (form.observed_condition ?? "") : rca.data.observed_condition
-                        }
-                        editing={editing}
-                        onChange={(v) => setForm((f) => ({ ...f, observed_condition: v }))}
-                      />
-                      <Field
-                        label="Root cause"
-                        value={editing ? (form.root_cause ?? "") : rca.data.root_cause}
-                        editing={editing}
-                        onChange={(v) => setForm((f) => ({ ...f, root_cause: v }))}
-                      />
-                    </dl>
-
-                    <h3 className="mt-5 text-sm font-semibold">5 Why</h3>
-                    <ol className="mt-2 space-y-2">
-                      {rca.data.five_why?.map((w, idx) => (
-                        <li key={idx} className="rounded-lg border border-border p-3">
-                          <p className="text-xs font-medium text-muted-foreground">
-                            {idx + 1}. {w.question || "Not yet answered"}
-                          </p>
-                          <p className="mt-1 text-sm">{w.answer || "—"}</p>
-                        </li>
-                      ))}
-                    </ol>
-
-                    <dl className="mt-5 grid gap-3 md:grid-cols-2">
-                      <Field
-                        label="Corrective action"
-                        value={
-                          editing ? (form.corrective_action ?? "") : rca.data.corrective_action
-                        }
-                        editing={editing}
-                        onChange={(v) => setForm((f) => ({ ...f, corrective_action: v }))}
-                      />
-                      <Field
-                        label="Preventive action"
-                        value={
-                          editing ? (form.preventive_action ?? "") : rca.data.preventive_action
-                        }
-                        editing={editing}
-                        onChange={(v) => setForm((f) => ({ ...f, preventive_action: v }))}
-                      />
-                    </dl>
-                  </div>
-
+                  {/* Linked operational events */}
                   <div className="rounded-xl border border-border bg-card">
                     <header className="border-b border-border px-4 py-3 text-sm font-semibold">
                       Linked operational events
@@ -443,6 +654,10 @@ function RcaPage() {
                             className="flex items-center justify-between gap-4 px-4 py-3"
                           >
                             <span className="text-sm">{e.description}</span>
+                            <div className="text-xs text-muted-foreground">
+                              {e.area_name ? `${e.area_name} · ` : ""}
+                              {e.line_name}
+                            </div>
                             <SourceBadge>
                               {SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}
                             </SourceBadge>
@@ -467,33 +682,5 @@ function RcaPage() {
         </section>
       </div>
     </ConsoleShell>
-  );
-}
-
-function Field({
-  label,
-  value,
-  editing,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  editing?: boolean;
-  onChange?: (v: string) => void;
-}) {
-  return (
-    <div className="rounded-lg border border-border p-3">
-      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
-      {editing && onChange ? (
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="mt-1 w-full rounded border border-input bg-secondary px-2 py-1 text-sm outline-none focus:border-ring"
-        />
-      ) : (
-        <dd className="mt-1 text-sm">{value || "—"}</dd>
-      )}
-    </div>
   );
 }

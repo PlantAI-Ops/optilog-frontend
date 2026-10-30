@@ -92,6 +92,7 @@ export interface IncidentRow {
   status: string;
   owner: string;
   due_date: string;
+  severity?: string;
 }
 
 export interface RCARow {
@@ -120,6 +121,10 @@ export interface RCARow {
   corrective_actions_assigned?: string;
   investigation_completed?: string;
   contribution_logs?: RCARowContributionLog[];
+  // P1: New RCA fields
+  containment_action?: string;
+  root_cause_category?: "man" | "method" | "machine" | "material" | "measurement" | "environment";
+  fishbone?: { category: string; causes: string[] }[];
 }
 
 export interface RCARowContributionLog {
@@ -136,24 +141,24 @@ export interface RCARowContributionLog {
 
 export interface RCAAction {
   id: string;
+  ref?: string;
   incident_id: string;
-  action_type: "corrective" | "preventive" | "verification" | "monitoring";
+  event_id?: string | null;
+  type: "corrective" | "preventive" | "verification" | "monitoring";
   description: string;
-  assignees: string[];
-  due_date: string;
+  assigned_to?: string | null;
+  assigned_to_name?: string;
   status:
-    | "draft"
+    | "pending"
     | "assigned"
     | "in_progress"
     | "verification_required"
     | "completed"
     | "verified"
     | "closed";
-  evidence_required: boolean;
-  owner: string;
+  due_date: string | null;
+  completed_at?: string | null;
   created_at: string;
-  completed_at?: string;
-  verification_evidence_id?: string;
 }
 
 export interface AssetRollupRow {
@@ -329,6 +334,95 @@ export function useApproveRCA() {
     mutationFn: (rcaId: string) => api.post<RCARow>(`/rca/${rcaId}/approve`),
     onSuccess: (_res, rcaId) => {
       qc.invalidateQueries({ queryKey: ["rca", rcaId] });
+    },
+  });
+}
+
+export function useCloseRCA() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rcaId: string) => api.post<RCARow>(`/rca/${rcaId}/close`),
+    onSuccess: (_res, rcaId) => {
+      qc.invalidateQueries({ queryKey: ["rca", rcaId] });
+    },
+  });
+}
+
+export function useReopenRCA() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rcaId: string) => api.post<RCARow>(`/rca/${rcaId}/reopen`),
+    onSuccess: (_res, rcaId) => {
+      qc.invalidateQueries({ queryKey: ["rca", rcaId] });
+    },
+  });
+}
+
+export function useRCAActions(incidentId: string | undefined) {
+  return useQuery({
+    queryKey: ["rca", incidentId, "actions"],
+    queryFn: () =>
+      api.get<{ items: RCAAction[] } | RCAAction[]>(
+        `/actions?incident_id=${encodeURIComponent(incidentId ?? "")}&page_size=200`,
+      ),
+    enabled: !!incidentId,
+    staleTime: STALE_TIME,
+    select: (data) => (Array.isArray(data) ? data : (data.items ?? [])),
+  });
+}
+
+export function useCreateRCAAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      incidentId,
+      data,
+    }: {
+      incidentId: string;
+      data: {
+        type: "corrective" | "preventive" | "verification" | "monitoring";
+        description: string;
+        assigned_to?: string;
+        due_date?: string;
+      };
+    }) =>
+      api.post<RCAAction>("/actions", {
+        ...data,
+        incident_id: incidentId,
+      }),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["rca", vars.incidentId, "actions"] });
+    },
+  });
+}
+
+export function useUpdateRCAAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      actionId,
+      patch,
+    }: {
+      actionId: string;
+      patch: Partial<{
+        description: string;
+        assigned_to: string;
+        due_date: string;
+        status: string;
+      }>;
+    }) => api.patch<RCAAction>(`/actions/${actionId}`, patch),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["actions"] });
+    },
+  });
+}
+
+export function useCompleteRCAAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (actionId: string) => api.post<RCAAction>(`/actions/${actionId}/complete`),
+    onSuccess: (_res, actionId) => {
+      qc.invalidateQueries({ queryKey: ["actions"] });
     },
   });
 }
