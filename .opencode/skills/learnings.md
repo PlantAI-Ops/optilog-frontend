@@ -1296,3 +1296,158 @@ const updateRing = () => {
 - `end-shift` summary regeneration is not offered in the UI yet (`regenerate` param exists server-side only) — add a "Regenerate" affordance if supervisors ask.
 - Live read-only check (supervisor token minted in-process, no DB writes): `/shifts/report-approvals` 200 with all new keys present (values empty on the current 0-event dev shift; derivation is covered by tests), `/my-events` 200.
 - Gates: backend `pytest tests -q` = **330 passed**; frontend `npm run typecheck` clean, `npx eslint --fix` on touched files → only the 3 pre-existing `any`s in `hooks.ts` (now 624/658/1100), `npm run build` exit 0.
+
+---
+
+## 2026-10-28: Event → Maintenance Flow Sync Fix
+
+**Context:** Fixed critical frontend/backend sync issues in the planned maintenance feature. The maintenance page was completely broken due to API contract mismatches.
+
+**Decisions:**
+- Backend: Enhanced GET /plants/{plant_id}/planned-maintenance endpoint to include 11 missing fields (line, shift, team, severity, observation, etc.)
+- Backend: Added is_auto_routed flag to distinguish auto-created vs supervisor-planned maintenance items
+- Frontend: Rewrote PlannedMaintenanceItem interface to match actual backend response shape
+- Frontend: Fixed API endpoints - replaced non-existent /plants/{id}/planned-maintenance/{eventId} with correct /actions/{action_id} endpoints
+- Frontend: Added unwrapping of response envelope ({month, total, items[]} → items[])
+- Frontend: Implemented day/week/month views using proper backend endpoints instead of client-side filtering
+- Frontend: Added visual "⚡ Auto-routed" badge for auto-created maintenance items
+
+**Gotchas:**
+- Backend returns {month, total, items[]} envelope, NOT a flat array - always unwrap with `res?.items ?? []`
+- Action endpoints are at /actions/{id} not /plants/{id}/planned-maintenance/{id}
+- POST /shifts/{id}/events/{id}/plan-maintenance DOES still exist (create-only, body: planned_date/notes/assigned_team) - only the old PATCH/complete under /plants/.../planned-maintenance/ were dead
+- scheduled_date is ISO datetime string, not just date - use .slice(0, 10) for grouping
+- Auto-routed items have due_date: None - this is how we detect is_auto_routed: true
+- POST /actions/{id}/complete only updates action status, event status remains unchanged (by design)
+- Week/day endpoints exist at /planned-maintenance/week?date= and /planned-maintenance/day?date=
+- ConsoleShell maintenance badge must exclude BOTH "completed" and "cancelled", otherwise cancelled items inflate the count
+
+**Pattern: Unwrapping paginated API responses**
+```ts
+export function usePlannedMaintenance(plantId: string | undefined, month: string) {
+  return useQuery({
+    queryKey: ["planned-maintenance", plantId, "month", month],
+    queryFn: async () => {
+      const res = await api.get<{ month: string; total: number; items: PlannedMaintenanceItem[] }>(
+        `/plants/${plantId}/planned-maintenance?month=${month}`,
+      );
+      return res?.items ?? [];  // Unwrap envelope
+    },
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
+}
+```
+
+**Pattern: Action-based mutations (not plant-based)**
+```ts
+export function useCompletePlannedMaintenance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ actionId }: { actionId: string }) =>
+      api.post(`/actions/${actionId}/complete`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["planned-maintenance"] });
+    },
+  });
+}
+```
+
+**Field mapping (old → new):**
+- planned_date → scheduled_date
+- maintenance_notes → notes
+- assigned_team → assigned_to_name (user, not team)
+- Missing: line_id/name, shift_id/name, team_id/name, severity, event_type, observation, reported_cause, suspected_cause, logged_by, created_at, is_auto_routed
+
+**Files changed:**
+- Backend: app/domain/dashboard/service.py (enhanced _get_planned_maintenance_range())
+- Frontend: src/lib/hooks.ts (updated interface + 4 hooks)
+- Frontend: src/routes/console/maintenance.tsx (complete rewrite)
+- Frontend: src/components/console/ConsoleShell.tsx (maintenance + RCA nav badges)
+
+**Verification:**
+- ✅ Backend pytest tests -q → 344 passed
+- ✅ TypeScript compilation passes (`npx tsc --noEmit`)
+- ✅ Full build (client + SSR + Nitro) exit 0
+- ✅ `npx eslint --fix` on touched files → only the 3 pre-existing `any`s in hooks.ts (now 671/705/1147)
+- ⏳ End-to-end testing pending (needs running backend)
+
+---
+
+## 2026-10-29: Manual Maintenance Routing — Details + Events Page
+
+**Context:** Supplemented the Event → Maintenance sync fix with full manual-routing support: richer dialog details, a fourth routing surface, and documentation.
+
+**Decisions:**
+- Extended `PlanMaintenanceIssue` with optional `type`/`line`/`reported_cause`/`logged_by`/`timestamp` — all callers still pass title/subtitle, so no break
+- Optional fields typed `string | undefined` (not just `?`) because `exactOptionalPropertyTypes: true` rejects explicit `undefined`
+- Added "Push to maintenance" to Console → Events expanded rows, gated on supervisor && status ∉ {planned_maintenance, resolved}; kept the existing Create RCA button alongside it
+- `usePlanMaintenance` now also invalidates `["dashboard", plantId, "events"]` on success — previously the Push button label went stale until `staleTime` expired (pre-existing Reports bug too)
+- Manual routing works for ANY event type; auto-routing only covers `observation`
+- Documented the whole flow in `EVENT_MAINTENANCE_FLOW_SYNC_FIX.md` (kept at repo root, not deleted)
+
+**Gotchas:**
+- Console Events table has 7 columns — the detail/empty rows need `colSpan={7}` (was 6 after the Operator column was added)
+- `plan_maintenance_for_event` is idempotent: manual push after auto-route UPDATES the existing action's due_date, never duplicates
+- Events-page routing needs no manual `saveEvent` status flip — the backend already sets `planned_maintenance` (mobile does it only to sync the local store)
+- Dialog timestamp uses `toLocaleString` safely because the dialog only mounts after a click (no SSR hydration mismatch)
+
+**Verification:**
+- ✅ `npm run typecheck` clean
+- ✅ `npx eslint --fix` on touched files → only the 3 pre-existing `any`s in hooks.ts
+- ✅ `npm run build` exit 0
+
+---
+
+## 2026-10-29: "No scheduled shift today" While a Shift Is Running
+
+**Context:** The mobile start-logging panel showed "Running now: Morning (6–14) · Team A on shift (3)" directly above "No scheduled shift today. Events will be logged to a pending shift." — same screen, two endpoints disagreeing.
+
+**Root cause:**
+- "Running now" card ← `useShiftsNow` → `GET /shifts/now` — plant-wide pattern window + rotation team; no per-user state.
+- Banner ← `useCurrentShift` → `GET /shifts/current`, fires on `current_shift.status === "pending"`.
+- Backend `get_current_shift` Branch B (`dashboard/service.py`): window IS active but the caller belongs to **no active team** (not in `member_ids`/`supervisor_id`, or team inactive) → returns the team-less `_pending_shift` placeholder with `status: "pending"`. So `status === "pending"` means "you got the placeholder", NOT "no scheduled shift today".
+- Banner only renders when `!blocked`, and `blocked = offShift && !isSupervisor` — so the contradiction surfaces for **supervisors/managers without a team** (plant_manager bypasses the gate; a team-less operator would get the blocked card instead).
+- Confirmed live (read-only pymongo): Factory Beta has `morning 6–14` covering now AND an in-window `team=None, type=pending, status=pending` doc created that same day 06:00–14:00 — Branch B firing; users like Plant Manager One are in no team.
+
+**Decisions:**
+- Frontend-only fix (user chose over a backend `pending_reason` field): branch banner copy on `nowShift.data.current_shift` — window running → "The Morning shift is running (6–14), but you're not assigned to a team — events will be logged to a pending shift" + "Covering this window: Team A"; use `myTeam` (already computed in StartShiftScreen) to distinguish "no team" vs "your team isn't working this window"; window absent → original copy (the only case it's true).
+- Fixed the sibling symptom: headline used `shiftLabel("pending")` → "Hello X, Pending"; now falls back to the time-of-day greeting when `shift_type === "pending"`.
+
+**Gotchas:**
+- `/shifts/current` returns `start`/`end` as **hour ints**, not ISO — use `nowShift`'s ISO `start`/`end` (or raw `start_hour`/`end_hour`) for window display; don't `formatWindow()` the current-shift payload.
+- `status: "pending"` payloads only come from `_pending_shift` (Branch A no window / B no team / C rotation-off + no future doc) — generator/activator docs are always `scheduled`/`active`.
+- `myTeam` is undefined while `teamsDetail` loads — copy degrades to "not assigned to a team" until teams arrive; fine for a banner.
+- Pattern-window hour math is identical in both endpoints (`match_active_pattern` vs inline) — Branch A (no window) can't contradict `/shifts/now`; only Branch B/C produce the split.
+
+**Verification:**
+- ✅ `npm run typecheck` clean
+- ✅ `npx eslint --fix src/routes/index.tsx` → only the 4 pre-existing `any`s (lines 18-21)
+- ✅ `npm run build` exit 0
+
+---
+
+## 2026-10-29: Console Manual Routing — Visible RCA/Maintenance Push + #ACT- Refs
+
+**Context:** Console event rows hid both push actions behind row-expansion (RCA additionally breakdown-only), while auto-routing already handles two event types. User wanted: always-visible buttons for anything NOT yet routed, and routed rows showing their incident/maintenance number instead.
+
+**Backend model (the key to everything):**
+- `AUTO_ROUTE_TO_RCA = {"breakdown"}` (→ incident + draft RCA, status `escalated`), `AUTO_ROUTE_TO_MAINTENANCE = {"observation"}` (→ action, status `planned_maintenance`); `ROUTED_STATUSES = {escalated, planned_maintenance, resolved, deleted}` = already handed off. Manual routing therefore only targets downtime/quality/safety/etc.
+- RCA endpoint's `event_type == "breakdown"` 409 lifted in `rca/service.py` — now: existing incident → idempotent reuse; else status ∈ {planned_maintenance, resolved, deleted} → 409 "already routed or closed"; else create for **any** type.
+- Maintenance endpoint never had a status gate (idempotent by design) — its gate was frontend-only.
+- `#ACT-###` refs mirror the incident system (`incidents/service.py`): same format/parse/resolve + backfill script, but counter-keyed **per tenant** (`action:{tenant_id}`) because `GET /actions` is tenant-wide (no plant filter). Actions have no plant_id; incidents are plant-scoped.
+
+**Frontend decisions:**
+- `ROUTED_EVENT_STATUSES` exported from `hooks.ts` as the single gate (mirrors backend); `canRCA = !incident_id && !routed`, `canMaint = !action && !routed` — used in both the new always-visible Actions column (8th col, both colSpans bumped) and the expanded row.
+- Routed rows render badges instead of buttons: `#INC-…` → `/console/rca?incident=…`, `#ACT-…` → `/console/maintenance` (event→action joined client-side via `useActionsByType`, `page_size=200`).
+
+**Gotchas found:**
+- **Invalidation prefix bug:** `useCreateRCAFromEvent` invalidated `["dashboard","incidents"]` — but real keys are `["dashboard", plantId, "incidents", status]`, so the prefix never matched and nothing refreshed. Fixed to broad `["dashboard"]`. (TanStack matches by array-prefix; a literal in position 1 must match the plantId position.)
+- `usePlanMaintenance` didn't invalidate `["actions", …]` → new badge would sit ref-less for `staleTime`; added.
+- `useActionsByType`'s third `enabled` arg is **dead** (hook hardcodes `enabled: !!plantId`) — harmless but misleading; reports passes it anyway.
+- `mergeEvents` on mobile is add-only (never updates existing rows) — why mobile needed a local `updateEvent` in the earlier (reverted) attempt; console pages refetch properly so no local patching needed here.
+- Events list already returns `incident_ref` per row (dashboard enrichment) — no backend change needed for the incident badge.
+
+**Process:** First attempt misread "for events" as mobile timeline/end-shift rows — reverted entirely (`git checkout` of 5 files) before building on console. Confirm surface before building when a request says "for X too".
+
+**Verification:** frontend `tsc` clean / eslint only 3 documented pre-existing `any`s / `vite build` exit 0 / SSR 200 on `/console/events`, `/console/reports`, `/timeline`; backend `uv run pytest` **345 passed** (409-test flipped to 200 + new already-routed 409 test + `#ACT-` assertions). Backend restarted with `--reload` (was running without it — code changes never go live silently).

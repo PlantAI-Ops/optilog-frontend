@@ -11,8 +11,6 @@ import {
   subDays,
   addWeeks,
   subWeeks,
-  isWithinInterval,
-  parseISO,
 } from "date-fns";
 import {
   CalendarDays,
@@ -23,6 +21,7 @@ import {
   RotateCcw,
   Trash2,
   Wrench,
+  Zap,
 } from "lucide-react";
 import { ClientOnly } from "@/components/ui/ClientOnly";
 import { ConsoleShell } from "@/components/console/ConsoleShell";
@@ -30,6 +29,8 @@ import { useShiftLog } from "@/lib/shift-log";
 import { ApiError } from "@/lib/api";
 import {
   usePlannedMaintenance,
+  usePlannedMaintenanceWeek,
+  usePlannedMaintenanceDay,
   useCompletePlannedMaintenance,
   useUpdatePlannedMaintenance,
   type PlannedMaintenanceItem,
@@ -68,35 +69,31 @@ function MaintenancePage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
 
   const monthStr = format(month, "yyyy-MM");
+  const dateStr = format(selectedDate, "yyyy-MM-dd");
 
-  const planned = usePlannedMaintenance(plantId, monthStr);
+  const monthQuery = usePlannedMaintenance(plantId, monthStr);
+  const weekQuery = usePlannedMaintenanceWeek(plantId, dateStr);
+  const dayQuery = usePlannedMaintenanceDay(plantId, dateStr);
+
+  const planned = view === "month" ? monthQuery : view === "week" ? weekQuery : dayQuery;
+
   const complete = useCompletePlannedMaintenance();
   const update = useUpdatePlannedMaintenance();
 
-  const filteredItems = useMemo(() => {
-    const items = Array.isArray(planned.data) ? planned.data : [];
-    if (view === "month") return items;
+  const items = useMemo(() => {
+    if (!planned.data) return [];
+    return Array.isArray(planned.data) ? planned.data : [];
+  }, [planned.data]);
 
-    if (view === "day") {
-      const target = format(selectedDate, "yyyy-MM-dd");
-      return items.filter((i) => i.planned_date === target);
+  const grouped = useMemo(() => {
+    const groups: Record<string, PlannedMaintenanceItem[]> = {};
+    for (const item of items) {
+      const date = item.scheduled_date?.slice(0, 10) || "unknown";
+      if (!groups[date]) groups[date] = [];
+      groups[date].push(item);
     }
-
-    // week
-    const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
-    const weekEnd = endOfWeek(selectedDate, { weekStartsOn: 1 });
-    return items.filter((i) => {
-      const d = parseISO(i.planned_date);
-      return isWithinInterval(d, { start: weekStart, end: weekEnd });
-    });
-  }, [planned.data, view, selectedDate]);
-
-  const grouped = filteredItems.reduce<Record<string, PlannedMaintenanceItem[]>>((acc, item) => {
-    const key = item.planned_date;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item);
-    return acc;
-  }, {});
+    return groups;
+  }, [items]);
 
   const sortedDates = Object.keys(grouped).sort();
 
@@ -114,10 +111,7 @@ function MaintenancePage() {
 
   const headerLabel = useMemo(() => {
     if (view === "month") return format(month, "MMMM yyyy");
-
-    if (view === "day") {
-      return format(selectedDate, "EEEE, MMMM d, yyyy");
-    }
+    if (view === "day") return format(selectedDate, "EEEE, MMMM d, yyyy");
 
     // week
     const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
@@ -168,10 +162,12 @@ function MaintenancePage() {
         {view === "day" && (
           <input
             type="date"
-            value={format(selectedDate, "yyyy-MM-dd")}
+            value={dateStr}
             onChange={(e) => {
               const d = e.target.value;
-              if (d) setSelectedDate(parseISO(d));
+              if (d) {
+                setSelectedDate(new Date(d + "T00:00:00"));
+              }
             }}
             className="h-8 rounded-lg border border-border bg-secondary px-2 text-xs outline-none focus:border-ring"
           />
@@ -207,7 +203,7 @@ function MaintenancePage() {
             <div key={date}>
               <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-muted-foreground">
                 <CalendarDays className="size-4" />
-                <ClientOnly fallback={<span>{format(new Date(date + "T00:00:00"), "EEEE, MMMM d, yyyy")}</span>}>
+                <ClientOnly fallback={<span>{date}</span>}>
                   {new Date(date + "T00:00:00").toLocaleDateString("en-US", {
                     weekday: "long",
                     month: "long",
@@ -218,26 +214,26 @@ function MaintenancePage() {
               <div className="space-y-3">
                 {(grouped[date] ?? []).map((item) => (
                   <MaintenanceCard
-                    key={item.event_id}
+                    key={item.id}
                     item={item}
-                    plantId={plantId ?? ""}
-                    onComplete={() =>
-                      complete.mutateAsync({ plantId: plantId ?? "", eventId: item.event_id })
-                    }
-                    onReschedule={(newDate) =>
-                      update.mutateAsync({
-                        plantId: plantId ?? "",
-                        eventId: item.event_id,
-                        patch: { planned_date: newDate },
-                      })
-                    }
-                    onCancel={() =>
-                      update.mutateAsync({
-                        plantId: plantId ?? "",
-                        eventId: item.event_id,
-                        patch: { status: "confirmed" },
-                      })
-                    }
+                    onComplete={() => {
+                      if (!item.action_id) return Promise.resolve();
+                      return complete.mutateAsync({ actionId: item.action_id });
+                    }}
+                    onReschedule={(newDate) => {
+                      if (!item.action_id) return Promise.resolve();
+                      return update.mutateAsync({
+                        actionId: item.action_id,
+                        patch: { due_date: newDate },
+                      });
+                    }}
+                    onCancel={() => {
+                      if (!item.action_id) return Promise.resolve();
+                      return update.mutateAsync({
+                        actionId: item.action_id,
+                        patch: { status: "cancelled" },
+                      });
+                    }}
                     isCompletePending={complete.isPending}
                     isUpdatePending={update.isPending}
                   />
@@ -253,7 +249,6 @@ function MaintenancePage() {
 
 function MaintenanceCard({
   item,
-  plantId,
   onComplete,
   onReschedule,
   onCancel,
@@ -261,7 +256,6 @@ function MaintenanceCard({
   isUpdatePending,
 }: {
   item: PlannedMaintenanceItem;
-  plantId: string;
   onComplete: () => Promise<unknown>;
   onReschedule: (newDate: string) => Promise<unknown>;
   onCancel: () => Promise<unknown>;
@@ -269,20 +263,48 @@ function MaintenanceCard({
   isUpdatePending: boolean;
 }) {
   const [showActions, setShowActions] = useState(false);
-  const [rescheduleDate, setRescheduleDate] = useState(item.planned_date);
-  const severityDot = SEVERITY_COLORS[item.severity] ?? "bg-muted-foreground";
+  const scheduledDate = item.scheduled_date?.slice(0, 10) || "";
+  const [rescheduleDate, setRescheduleDate] = useState(scheduledDate);
+  const severityDot = SEVERITY_COLORS[item.severity ?? ""] ?? "bg-muted-foreground";
 
   return (
     <div className="rounded-xl border border-border bg-card">
       <div className="px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className={`size-2.5 shrink-0 rounded-full ${severityDot}`} />
-              <span className="text-sm font-semibold capitalize">{item.event_type}</span>
-              <span className="text-xs text-muted-foreground">· {item.severity}</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              {item.severity && (
+                <span className={`size-2.5 shrink-0 rounded-full ${severityDot}`} />
+              )}
+              {item.event_type && (
+                <span className="text-sm font-semibold capitalize">{item.event_type}</span>
+              )}
+              {item.severity && (
+                <span className="text-xs text-muted-foreground">· {item.severity}</span>
+              )}
+              {item.is_auto_routed && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-600">
+                  <Zap className="size-3" />
+                  Auto-routed
+                </span>
+              )}
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  item.status === "completed"
+                    ? "bg-success/20 text-success"
+                    : item.status === "cancelled"
+                      ? "bg-muted text-muted-foreground"
+                      : item.status === "in_progress"
+                        ? "bg-warning/20 text-warning"
+                        : "bg-secondary text-secondary-foreground"
+                }`}
+              >
+                {item.status?.replace("_", " ")}
+              </span>
             </div>
-            <p className="mt-1 text-sm leading-snug break-words">{item.observation}</p>
+            <p className="mt-1 text-sm leading-snug break-words">
+              {item.observation || item.notes}
+            </p>
             {item.reported_cause && (
               <p className="mt-1 text-xs text-muted-foreground break-words">
                 Cause: {item.reported_cause}
@@ -297,39 +319,40 @@ function MaintenanceCard({
         </div>
 
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span>{item.asset_name}</span>
-          <span>{item.line_name}</span>
-          <span>
-            {item.shift_name} · {item.team_name}
-          </span>
-          <span>Logged by {item.logged_by}</span>
+          {item.asset_name && <span>{item.asset_name}</span>}
+          {item.line_name && <span>{item.line_name}</span>}
+          {item.shift_name && <span>{item.shift_name}</span>}
+          {item.team_name && <span>{item.team_name}</span>}
+          {item.logged_by && <span>Logged by {item.logged_by}</span>}
         </div>
 
-        {item.maintenance_notes && (
+        {item.notes && item.observation && (
           <div className="mt-2 rounded-lg bg-secondary/50 px-3 py-2 text-xs text-muted-foreground break-words">
-            {item.maintenance_notes}
+            {item.notes}
           </div>
         )}
 
-        {item.assigned_team && (
+        {item.assigned_to_name && (
           <p className="mt-2 text-xs font-medium text-muted-foreground">
-            Assigned: <span className="text-foreground">{item.assigned_team}</span>
+            Assigned: <span className="text-foreground">{item.assigned_to_name}</span>
           </p>
         )}
       </div>
 
       {/* Actions */}
-      <div className="flex border-t border-border">
-        <button
-          type="button"
-          onClick={() => setShowActions(!showActions)}
-          className="flex-1 px-4 py-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary/50"
-        >
-          {showActions ? "Hide actions" : "Actions"}
-        </button>
-      </div>
+      {item.action_id && item.status !== "completed" && (
+        <div className="flex border-t border-border">
+          <button
+            type="button"
+            onClick={() => setShowActions(!showActions)}
+            className="flex-1 px-4 py-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary/50"
+          >
+            {showActions ? "Hide actions" : "Actions"}
+          </button>
+        </div>
+      )}
 
-      {showActions && (
+      {showActions && item.action_id && (
         <div className="space-y-3 border-t border-border px-4 py-3">
           <div className="flex gap-2">
             <button
@@ -361,7 +384,7 @@ function MaintenanceCard({
             <button
               type="button"
               onClick={() => onReschedule(rescheduleDate)}
-              disabled={isUpdatePending || rescheduleDate === item.planned_date}
+              disabled={isUpdatePending || rescheduleDate === scheduledDate}
               className="flex h-10 items-center gap-2 rounded-lg border border-border bg-secondary px-3 text-xs font-medium hover:bg-secondary/80 disabled:opacity-60"
             >
               <RotateCcw className="size-3.5" />

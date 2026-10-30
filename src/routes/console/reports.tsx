@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ChevronRight, CircleCheck, Loader2, Search, Wrench } from "lucide-react";
 import { ConsoleShell, StatCard } from "@/components/console/ConsoleShell";
 import { PlanMaintenanceDialog } from "@/components/shift/PlanMaintenanceDialog";
@@ -7,6 +7,7 @@ import { STATUS_LABEL, UNRESOLVED_STATUSES, todayStr } from "@/lib/ops-model";
 import { ApiError } from "@/lib/api";
 import { hasMinRole, useShiftLog } from "@/lib/shift-log";
 import {
+  ROUTED_EVENT_STATUSES,
   useActionsByType,
   useApproveShiftReport,
   useConfirmEvent,
@@ -15,6 +16,7 @@ import {
   usePlanMaintenance,
   useReportApprovals,
   useResolveEvent,
+  type ActionRow,
   type EventRow,
   type ReportApprovalRow,
 } from "@/lib/hooks";
@@ -115,9 +117,11 @@ function ReportsPage() {
   const groups = groupReportRows(reportRows);
 
   const actionList = Array.isArray(actions.data) ? actions.data : (actions.data?.items ?? []);
-  const plannedEventIds = new Set(
-    actionList.map((a) => a.event_id).filter((id): id is string => !!id),
-  );
+  const actionByEvent = new Map<string, ActionRow>();
+  for (const a of actionList) {
+    if (a.event_id) actionByEvent.set(a.event_id, a);
+  }
+  const plannedEventIds = new Set(actionByEvent.keys());
 
   const run = async (id: string, fn: () => Promise<unknown>) => {
     setActionError(null);
@@ -376,99 +380,108 @@ function ReportsPage() {
           </p>
         ) : (
           <div className="mt-3 space-y-3">
-            {unresolved.map((e) => (
-              <div
-                key={e.id}
-                className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{e.description || e.observation}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {e.timestamp.slice(11, 16)}
-                    {e.area_name ? ` · ${e.area_name}` : ""} · {e.line_name} · {e.asset_name} ·{" "}
-                    <span className="font-medium capitalize">
-                      {STATUS_LABEL[e.status as keyof typeof STATUS_LABEL] ?? e.status}
-                    </span>
-                    {e.severity ? ` · ${e.severity}` : ""}
-                    {e.operator_name ? ` · logged by ${e.operator_name}` : ""}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  {e.status === "draft" ? (
+            {unresolved.map((e) => {
+              const maintAction = actionByEvent.get(e.id);
+              const routedToMaint = !!maintAction || ROUTED_EVENT_STATUSES.has(e.status);
+              const canStartRCA = !e.incident_id && !ROUTED_EVENT_STATUSES.has(e.status);
+              return (
+                <div
+                  key={e.id}
+                  className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">{e.description || e.observation}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {e.timestamp.slice(11, 16)}
+                      {e.area_name ? ` · ${e.area_name}` : ""} · {e.line_name} · {e.asset_name} ·{" "}
+                      <span className="font-medium capitalize">
+                        {STATUS_LABEL[e.status as keyof typeof STATUS_LABEL] ?? e.status}
+                      </span>
+                      {e.severity ? ` · ${e.severity}` : ""}
+                      {e.operator_name ? ` · logged by ${e.operator_name}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    {e.incident_id ? (
+                      <Link
+                        to="/console/rca"
+                        search={{ incident: e.incident_id }}
+                        title="Open the RCA workspace for this incident"
+                        className="flex items-center rounded-lg border border-info/40 bg-info/10 px-2.5 py-1.5 text-xs font-bold text-info hover:bg-info/20"
+                      >
+                        {e.incident_ref || `#${e.incident_id.slice(-4)}`}
+                      </Link>
+                    ) : null}
+                    {e.status === "draft" ? (
+                      <button
+                        type="button"
+                        disabled={pendingId === e.id}
+                        onClick={() =>
+                          run(e.id, async () => {
+                            await confirmEvent.mutateAsync({ eventId: e.id });
+                          })
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-bold hover:bg-secondary/60 disabled:opacity-50"
+                      >
+                        {pendingId === e.id ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <CircleCheck className="size-3.5" />
+                        )}
+                        Confirm
+                      </button>
+                    ) : null}
+
                     <button
                       type="button"
                       disabled={pendingId === e.id}
                       onClick={() =>
                         run(e.id, async () => {
-                          await confirmEvent.mutateAsync({ eventId: e.id });
+                          await resolveEvent.mutateAsync({ eventId: e.id });
                         })
                       }
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-bold hover:bg-secondary/60 disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-success/40 bg-success/10 px-3 py-1.5 text-xs font-bold text-success disabled:opacity-50"
                     >
-                      {pendingId === e.id ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <CircleCheck className="size-3.5" />
-                      )}
-                      Confirm
+                      <CircleCheck className="size-3.5" /> Resolve
                     </button>
-                  ) : null}
 
-                  <button
-                    type="button"
-                    disabled={pendingId === e.id}
-                    onClick={() =>
-                      run(e.id, async () => {
-                        await resolveEvent.mutateAsync({ eventId: e.id });
-                      })
-                    }
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-success/40 bg-success/10 px-3 py-1.5 text-xs font-bold text-success disabled:opacity-50"
-                  >
-                    <CircleCheck className="size-3.5" /> Resolve
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={plannedEventIds.has(e.id) || e.status === "planned_maintenance"}
-                    onClick={() => {
-                      setPlanRow(e);
-                      setPlanDate(todayStr());
-                      setPlanNotes("");
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-warning/40 bg-warning/10 px-3 py-1.5 text-xs font-bold text-warning disabled:opacity-50"
-                    title={
-                      plannedEventIds.has(e.id) || e.status === "planned_maintenance"
-                        ? "Already pushed to maintenance"
-                        : undefined
-                    }
-                  >
-                    <Wrench className="size-3.5" />
-                    {plannedEventIds.has(e.id) || e.status === "planned_maintenance"
-                      ? "Planned"
-                      : "Push to maintenance"}
-                  </button>
-
-                  {e.event_type === "breakdown" && !e.incident_id && e.status !== "escalated" ? (
                     <button
                       type="button"
-                      disabled={pendingId === e.id || createRCA.isPending}
-                      onClick={() =>
-                        run(e.id, async () => {
-                          const rca = await createRCA.mutateAsync({ eventId: e.id });
-                          await navigate({
-                            to: "/console/rca",
-                            search: { incident: rca.incident_id },
-                          });
-                        })
-                      }
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-info/40 bg-info/10 px-3 py-1.5 text-xs font-bold text-info disabled:opacity-50"
+                      disabled={pendingId === e.id || routedToMaint}
+                      onClick={() => {
+                        setPlanRow(e);
+                        setPlanDate(todayStr());
+                        setPlanNotes("");
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-warning/40 bg-warning/10 px-3 py-1.5 text-xs font-bold text-warning disabled:opacity-50"
+                      title={routedToMaint ? "Already routed to maintenance" : undefined}
                     >
-                      <Search className="size-3.5" /> Start RCA
+                      <Wrench className="size-3.5" />
+                      {routedToMaint ? (maintAction?.ref ?? "Maintenance") : "Push to maintenance"}
                     </button>
-                  ) : null}
+
+                    {canStartRCA ? (
+                      <button
+                        type="button"
+                        disabled={pendingId === e.id || createRCA.isPending}
+                        onClick={() =>
+                          run(e.id, async () => {
+                            const rca = await createRCA.mutateAsync({ eventId: e.id });
+                            await navigate({
+                              to: "/console/rca",
+                              search: { incident: rca.incident_id },
+                            });
+                          })
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-info/40 bg-info/10 px-3 py-1.5 text-xs font-bold text-info disabled:opacity-50"
+                      >
+                        <Search className="size-3.5" /> Start RCA
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -478,6 +491,11 @@ function ReportsPage() {
           issue={{
             title: planRow.description || planRow.observation || planRow.event_type,
             subtitle: `${planRow.asset_name} · ${planRow.severity}`,
+            type: planRow.event_type,
+            line: planRow.line_name,
+            reported_cause: planRow.reported_cause,
+            logged_by: planRow.operator_name,
+            timestamp: planRow.timestamp,
           }}
           date={planDate}
           notes={planNotes}

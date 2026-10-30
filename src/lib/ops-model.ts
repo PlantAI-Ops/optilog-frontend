@@ -121,6 +121,7 @@ export interface Incident {
   evidence: { label: string; source: SourceSystem }[];
   event_ids: string[];
   ai_insight: string;
+  severity?: string;
 }
 
 export type ConnectorKind = "rest" | "webhook" | "sql" | "csv" | "mqtt" | "opcua" | "sftp";

@@ -1,6 +1,26 @@
 export interface PlanMaintenanceIssue {
   title: string;
   subtitle: string;
+  /** Event type (downtime, observation, …). */
+  type?: string | undefined;
+  /** Line the event happened on. */
+  line?: string | undefined;
+  /** Operator-reported cause, when captured. */
+  reported_cause?: string | undefined;
+  /** Who logged the event. */
+  logged_by?: string | undefined;
+  /** ISO timestamp — rendered client-side (dialog only mounts after a click). */
+  timestamp?: string | undefined;
+}
+
+function DetailRow({ k, v }: { k: string; v?: string | undefined }) {
+  if (!v) return null;
+  return (
+    <div className="flex gap-2">
+      <dt className="w-24 shrink-0 text-muted-foreground">{k}</dt>
+      <dd className="min-w-0 break-words">{v}</dd>
+    </div>
+  );
 }
 
 /**
@@ -45,6 +65,31 @@ export function PlanMaintenanceDialog({
             </p>
             <p className="mt-1 text-sm font-medium break-words">{issue.title}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{issue.subtitle}</p>
+            {issue.type ||
+            issue.line ||
+            issue.reported_cause ||
+            issue.logged_by ||
+            issue.timestamp ? (
+              <dl className="mt-2 space-y-1 border-t border-border/60 pt-2 text-xs">
+                <DetailRow k="Type" v={issue.type} />
+                <DetailRow k="Line" v={issue.line} />
+                <DetailRow k="Reported cause" v={issue.reported_cause} />
+                <DetailRow k="Logged by" v={issue.logged_by} />
+                <DetailRow
+                  k="Logged at"
+                  v={
+                    issue.timestamp
+                      ? new Date(issue.timestamp).toLocaleString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : undefined
+                  }
+                />
+              </dl>
+            ) : null}
           </div>
 
           <label className="block">

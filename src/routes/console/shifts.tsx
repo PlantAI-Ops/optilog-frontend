@@ -92,7 +92,9 @@ function ShiftsPage() {
             type="button"
             onClick={() => setDate(p.value)}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              date === p.value ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+              date === p.value
+                ? "bg-primary text-primary-foreground"
+                : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
             }`}
           >
             {p.label}
@@ -134,7 +136,9 @@ function ShiftsPage() {
               </li>
             ))}
             {shiftsData.length === 0 ? (
-              <li className="px-4 py-6 text-sm text-muted-foreground">No shifts found for this date.</li>
+              <li className="px-4 py-6 text-sm text-muted-foreground">
+                No shifts found for this date.
+              </li>
             ) : null}
           </ul>
         </section>
@@ -143,10 +147,34 @@ function ShiftsPage() {
           {activeShift ? (
             <>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <StatCard label="Produced" value={<ClientOnly fallback={<span>{formatNumber(activeShift.produced)}</span>}>{activeShift.produced.toLocaleString()}</ClientOnly>} hint={<ClientOnly fallback={<span>{formatNumber(activeShift.target)}</span>}>{activeShift.target.toLocaleString()}</ClientOnly>} />
-                <StatCard label="Achievement" value={`${activeShift.achievement}%`} tone="success" />
-                <StatCard label="Downtime" value={`${activeShift.downtime_minutes} min`} tone="warning" />
-                <StatCard label="Events" value={shiftEvents.data?.length ?? 0} hint={`${activeShift.start}–${activeShift.end}`} />
+                <StatCard
+                  label="Produced"
+                  value={
+                    <ClientOnly fallback={<span>{formatNumber(activeShift.produced)}</span>}>
+                      {activeShift.produced.toLocaleString()}
+                    </ClientOnly>
+                  }
+                  hint={
+                    <ClientOnly fallback={<span>{formatNumber(activeShift.target)}</span>}>
+                      {activeShift.target.toLocaleString()}
+                    </ClientOnly>
+                  }
+                />
+                <StatCard
+                  label="Achievement"
+                  value={`${activeShift.achievement}%`}
+                  tone="success"
+                />
+                <StatCard
+                  label="Downtime"
+                  value={`${activeShift.downtime_minutes} min`}
+                  tone="warning"
+                />
+                <StatCard
+                  label="Events"
+                  value={shiftEvents.data?.length ?? 0}
+                  hint={`${activeShift.start}–${activeShift.end}`}
+                />
               </div>
 
               <div className="mt-6 rounded-xl border border-border bg-card">
@@ -166,13 +194,17 @@ function ShiftsPage() {
                             <p className="text-sm font-medium">{e.description}</p>
                             <p className="mt-1 text-xs text-muted-foreground">
                               {new Date(e.timestamp).toISOString().slice(11, 16)} · {e.event_type} /{" "}
-                              {e.category} · {STATUS_LABEL[e.status as keyof typeof STATUS_LABEL] ?? e.status}
+                              {e.category} ·{" "}
+                              {STATUS_LABEL[e.status as keyof typeof STATUS_LABEL] ?? e.status}
                               {e.duration_seconds
                                 ? ` · ${Math.round(e.duration_seconds / 60)} min`
                                 : ""}
+                              {e.operator_name ? ` · logged by ${e.operator_name}` : ""}
                             </p>
                           </div>
-                          <SourceBadge>{SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}</SourceBadge>
+                          <SourceBadge>
+                            {SOURCE_LABEL[e.source as keyof typeof SOURCE_LABEL] ?? e.source}
+                          </SourceBadge>
                         </div>
                       </li>
                     ))}

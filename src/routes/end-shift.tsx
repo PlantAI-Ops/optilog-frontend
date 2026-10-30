@@ -96,6 +96,11 @@ function EndShiftPage() {
     ? {
         title: planEvent.observation || planEvent.event_type,
         subtitle: `${planEvent.asset} · ${planEvent.severity}`,
+        type: planEvent.event_type,
+        line: planEvent.line_name,
+        reported_cause: planEvent.reported_cause,
+        logged_by: planEvent.logged_by,
+        timestamp: planEvent.timestamp,
       }
     : null;
 

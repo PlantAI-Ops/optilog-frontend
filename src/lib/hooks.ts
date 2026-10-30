@@ -69,6 +69,7 @@ export interface EventRow {
   source_record_id: string;
   evidence: string[];
   incident_id: string | null;
+  incident_ref?: string;
   /** Where it happened (enriched by the API; missing on older rows). */
   area_id?: string;
   area_name?: string;
@@ -80,6 +81,7 @@ export interface EventRow {
 export interface IncidentRow {
   id: string;
   ref: string;
+  incident_ref?: string;
   title: string;
   line_id: string;
   line_name: string;
@@ -90,11 +92,13 @@ export interface IncidentRow {
   status: string;
   owner: string;
   due_date: string;
+  severity?: string;
 }
 
 export interface RCARow {
   id: string;
   incident_id: string;
+  incident_ref?: string;
   problem: string;
   observed_condition: string;
   root_cause: string;
@@ -107,6 +111,54 @@ export interface RCARow {
   status: string;
   created_at: string;
   updated_at: string;
+  // Enhanced RCA fields for traceability
+  investigation_start?: string;
+  investigation_priority?: "low" | "medium" | "high" | "critical";
+  investigation_owner?: string;
+  investigation_created?: string;
+  five_why_started?: string;
+  root_cause_identified?: string;
+  corrective_actions_assigned?: string;
+  investigation_completed?: string;
+  contribution_logs?: RCARowContributionLog[];
+  // P1: New RCA fields
+  containment_action?: string;
+  root_cause_category?: "man" | "method" | "machine" | "material" | "measurement" | "environment";
+  fishbone?: { category: string; causes: string[] }[];
+}
+
+export interface RCARowContributionLog {
+  id: string;
+  rca_id: string;
+  timestamp: string;
+  contributor: string;
+  contributor_role: string;
+  contribution_type: "finding" | "evidence" | "action_assignment" | "status_change" | "note";
+  content: string;
+  evidence_ids?: string[];
+  action_id?: string;
+}
+
+export interface RCAAction {
+  id: string;
+  ref?: string;
+  incident_id: string;
+  event_id?: string | null;
+  type: "corrective" | "preventive" | "verification" | "monitoring";
+  description: string;
+  assigned_to?: string | null;
+  assigned_to_name?: string;
+  status:
+    | "pending"
+    | "assigned"
+    | "in_progress"
+    | "verification_required"
+    | "completed"
+    | "verified"
+    | "closed";
+  due_date: string | null;
+  completed_at?: string | null;
+  created_at: string;
 }
 
 export interface AssetRollupRow {
@@ -228,7 +280,10 @@ export function useCreateRCAFromEvent() {
     mutationFn: ({ eventId }: { eventId: string }) =>
       api.post<RCARow>(`/rca/events/${eventId}/rca`, {}),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["dashboard", "incidents"] });
+      // Broad on purpose: the push flips event status + creates an incident,
+      // and a narrow ["dashboard","incidents"] prefix never matches the real
+      // ["dashboard", plantId, "incidents", …] keys.
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -279,6 +334,95 @@ export function useApproveRCA() {
     mutationFn: (rcaId: string) => api.post<RCARow>(`/rca/${rcaId}/approve`),
     onSuccess: (_res, rcaId) => {
       qc.invalidateQueries({ queryKey: ["rca", rcaId] });
+    },
+  });
+}
+
+export function useCloseRCA() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rcaId: string) => api.post<RCARow>(`/rca/${rcaId}/close`),
+    onSuccess: (_res, rcaId) => {
+      qc.invalidateQueries({ queryKey: ["rca", rcaId] });
+    },
+  });
+}
+
+export function useReopenRCA() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rcaId: string) => api.post<RCARow>(`/rca/${rcaId}/reopen`),
+    onSuccess: (_res, rcaId) => {
+      qc.invalidateQueries({ queryKey: ["rca", rcaId] });
+    },
+  });
+}
+
+export function useRCAActions(incidentId: string | undefined) {
+  return useQuery({
+    queryKey: ["rca", incidentId, "actions"],
+    queryFn: () =>
+      api.get<{ items: RCAAction[] } | RCAAction[]>(
+        `/actions?incident_id=${encodeURIComponent(incidentId ?? "")}&page_size=200`,
+      ),
+    enabled: !!incidentId,
+    staleTime: STALE_TIME,
+    select: (data) => (Array.isArray(data) ? data : (data.items ?? [])),
+  });
+}
+
+export function useCreateRCAAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      incidentId,
+      data,
+    }: {
+      incidentId: string;
+      data: {
+        type: "corrective" | "preventive" | "verification" | "monitoring";
+        description: string;
+        assigned_to?: string;
+        due_date?: string;
+      };
+    }) =>
+      api.post<RCAAction>("/actions", {
+        ...data,
+        incident_id: incidentId,
+      }),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["rca", vars.incidentId, "actions"] });
+    },
+  });
+}
+
+export function useUpdateRCAAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      actionId,
+      patch,
+    }: {
+      actionId: string;
+      patch: Partial<{
+        description: string;
+        assigned_to: string;
+        due_date: string;
+        status: string;
+      }>;
+    }) => api.patch<RCAAction>(`/actions/${actionId}`, patch),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["actions"] });
+    },
+  });
+}
+
+export function useCompleteRCAAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (actionId: string) => api.post<RCAAction>(`/actions/${actionId}/complete`),
+    onSuccess: (_res, actionId) => {
+      qc.invalidateQueries({ queryKey: ["actions"] });
     },
   });
 }
@@ -1125,29 +1269,70 @@ export function useMyEvents(plantId: string | undefined, date: string, shiftId?:
 /* -------------------------------------------------------------------------- */
 
 export interface PlannedMaintenanceItem {
+  id: string;
+  source: "action" | "event";
   event_id: string;
-  shift_id: string;
-  planned_date: string;
-  maintenance_notes: string;
-  assigned_team: string;
-  event_type: string;
-  observation: string;
-  reported_cause: string;
-  suspected_cause: string;
-  severity: string;
-  asset_name: string;
-  line_name: string;
-  shift_name: string;
-  team_name: string;
-  logged_by: string;
-  created_at: string;
+  action_id: string;
+  scheduled_date: string;
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+  notes: string;
+  asset_id?: string;
+  asset_name?: string;
+  line_id?: string;
+  line_name?: string;
+  shift_id?: string;
+  shift_name?: string;
+  team_id?: string;
+  team_name?: string;
+  assigned_to?: string;
+  assigned_to_name?: string;
+  event_type?: string;
+  severity?: string;
+  observation?: string;
+  reported_cause?: string;
+  suspected_cause?: string;
+  logged_by?: string;
+  created_at?: string;
+  is_auto_routed?: boolean;
 }
 
 export function usePlannedMaintenance(plantId: string | undefined, month: string) {
   return useQuery({
-    queryKey: ["planned-maintenance", plantId, month],
-    queryFn: () =>
-      api.get<PlannedMaintenanceItem[]>(`/plants/${plantId}/planned-maintenance?month=${month}`),
+    queryKey: ["planned-maintenance", plantId, "month", month],
+    queryFn: async () => {
+      const res = await api.get<{ month: string; total: number; items: PlannedMaintenanceItem[] }>(
+        `/plants/${plantId}/planned-maintenance?month=${month}`,
+      );
+      return res?.items ?? [];
+    },
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
+}
+
+export function usePlannedMaintenanceWeek(plantId: string | undefined, date: string) {
+  return useQuery({
+    queryKey: ["planned-maintenance", plantId, "week", date],
+    queryFn: async () => {
+      const res = await api.get<{ month: string; total: number; items: PlannedMaintenanceItem[] }>(
+        `/plants/${plantId}/planned-maintenance/week?date=${date}`,
+      );
+      return res?.items ?? [];
+    },
+    enabled: !!plantId,
+    staleTime: STALE_TIME,
+  });
+}
+
+export function usePlannedMaintenanceDay(plantId: string | undefined, date: string) {
+  return useQuery({
+    queryKey: ["planned-maintenance", plantId, "day", date],
+    queryFn: async () => {
+      const res = await api.get<{ month: string; total: number; items: PlannedMaintenanceItem[] }>(
+        `/plants/${plantId}/planned-maintenance/day?date=${date}`,
+      );
+      return res?.items ?? [];
+    },
     enabled: !!plantId,
     staleTime: STALE_TIME,
   });
@@ -1177,7 +1362,13 @@ export function usePlanMaintenance() {
         assigned_team: assignedTeam,
       }),
     onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ["planned-maintenance", variables.plantId] });
+      qc.invalidateQueries({ queryKey: ["planned-maintenance"] });
+      // Row badges join events against ["actions", …] — refresh both so the
+      // #ACT- ref shows without waiting out staleTime.
+      qc.invalidateQueries({ queryKey: ["actions"] });
+      // The event flips to planned_maintenance server-side — refresh the
+      // events list so buttons/labels update without waiting for staleTime.
+      qc.invalidateQueries({ queryKey: ["dashboard", variables.plantId, "events"] });
     },
   });
 }
@@ -1186,16 +1377,14 @@ export function useUpdatePlannedMaintenance() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
-      plantId,
-      eventId,
+      actionId,
       patch,
     }: {
-      plantId: string;
-      eventId: string;
-      patch: { planned_date?: string; maintenance_notes?: string; status?: string };
-    }) => api.patch(`/plants/${plantId}/planned-maintenance/${eventId}`, patch),
-    onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ["planned-maintenance", variables.plantId] });
+      actionId: string;
+      patch: { due_date?: string; status?: string };
+    }) => api.patch(`/actions/${actionId}`, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["planned-maintenance"] });
     },
   });
 }
@@ -1203,10 +1392,9 @@ export function useUpdatePlannedMaintenance() {
 export function useCompletePlannedMaintenance() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ plantId, eventId }: { plantId: string; eventId: string }) =>
-      api.post(`/plants/${plantId}/planned-maintenance/${eventId}/complete`),
-    onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ["planned-maintenance", variables.plantId] });
+    mutationFn: ({ actionId }: { actionId: string }) => api.post(`/actions/${actionId}/complete`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["planned-maintenance"] });
     },
   });
 }
@@ -1353,6 +1541,8 @@ export function useResolveEvent() {
 
 export interface ActionRow {
   id: string;
+  /** `#ACT-0042` — same on every surface; legacy docs fall back to last-4. */
+  ref?: string;
   event_id: string | null;
   incident_id: string | null;
   type: string;
@@ -1360,6 +1550,16 @@ export interface ActionRow {
   status: string;
   due_date: string | null;
 }
+
+/** Event statuses that already went to a downstream queue (RCA / maintenance
+ *  / closed) — mirrors ROUTED_STATUSES in the backend events service. Rows in
+ *  this set show their routing indicator instead of a push button. */
+export const ROUTED_EVENT_STATUSES: ReadonlySet<string> = new Set([
+  "escalated",
+  "planned_maintenance",
+  "resolved",
+  "deleted",
+]);
 
 /** GET /actions?type=… — used to know which events were already pushed. */
 export function useActionsByType(plantId: string | undefined, type: string, enabled = true) {

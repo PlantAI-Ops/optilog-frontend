@@ -199,10 +199,12 @@ function StartShiftScreen() {
   const shift = currentShift.data?.current_shift;
   const who = state.user?.name ?? "Operator";
   /* "{Name}, Afternoon" — driven by the *running* shift, not the clock; only
-     when no window is active do we fall back to a time-of-day greeting. */
-  const headline = shift
-    ? `${who}, ${shiftLabel(shift.shift_type) ?? shift.name}`
-    : `${greeting}, ${who}.`;
+     when no window is active do we fall back to a time-of-day greeting.
+     A team-less "pending" placeholder is not a shift name — greet by time. */
+  const headline =
+    shift && shift.shift_type !== "pending"
+      ? `${who}, ${shiftLabel(shift.shift_type) ?? shift.name}`
+      : `${greeting}, ${who}.`;
   const [selectedAreaId, setSelectedAreaId] = useState<string>("");
   const [selectedLineId, setSelectedLineId] = useState<string>("");
 
@@ -572,11 +574,25 @@ function StartShiftScreen() {
             </div>
           ) : null}
 
+          {/* status "pending" only means we landed on the team-less placeholder
+              shift — it does NOT mean the plant has no scheduled shift. When a
+              window is running (the card above proves it), say why instead. */}
           {shift?.status === "pending" && !blocked && (
             <div className="rounded-2xl border border-info/40 bg-info/10 p-4">
               <p className="text-base font-medium text-info">
-                No scheduled shift today. Events will be logged to a pending shift.
+                {nowShift.data?.current_shift
+                  ? `The ${shiftLabel(nowShift.data.current_shift.shift_type)} shift is running (${nowShift.data.current_shift.start_hour}–${nowShift.data.current_shift.end_hour}), but ${
+                      myTeam
+                        ? `your team (${myTeam.name}) isn't working this window`
+                        : "you're not assigned to a team"
+                    } — events will be logged to a pending shift.`
+                  : "No scheduled shift today. Events will be logged to a pending shift."}
               </p>
+              {nowShift.data?.current_shift?.team ? (
+                <p className="mt-1 text-sm text-info/80">
+                  Covering this window: {nowShift.data.current_shift.team.name}.
+                </p>
+              ) : null}
             </div>
           )}
 
