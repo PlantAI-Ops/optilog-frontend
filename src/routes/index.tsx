@@ -1051,30 +1051,37 @@ function RecordScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shiftWindow.over, phase]);
 
+  const commitInFlightRef = useRef(false);
   const commit = async (event: ShiftEvent) => {
-    const recordingPromise = recordingPromiseRef.current;
-    const linked: ShiftEvent = {
-      // Stamp the area/line picked at start onto every saved event.
-      ...event,
-      line_id: state.lineId,
-      area_id: state.areaId,
-      recording_id: settledRecordingIdRef.current ?? undefined,
-    };
-    recordingPromiseRef.current = null;
-    settledRecordingIdRef.current = null;
+    if (commitInFlightRef.current) return;
+    commitInFlightRef.current = true;
+    try {
+      const recordingPromise = recordingPromiseRef.current;
+      const linked: ShiftEvent = {
+        // Stamp the area/line picked at start onto every saved event.
+        ...event,
+        line_id: state.lineId,
+        area_id: state.areaId,
+        recording_id: settledRecordingIdRef.current ?? undefined,
+      };
+      recordingPromiseRef.current = null;
+      settledRecordingIdRef.current = null;
 
-    const serverId = await addEvent(linked);
-    // Upload still in flight: link the recording once it lands.
-    if (serverId && !linked.recording_id && recordingPromise) {
-      recordingPromise.then((recId) => {
-        if (!recId) return;
-        api.patch(`/events/${serverId}`, { recording_id: recId }).catch(() => {});
-      });
+      const serverId = await addEvent(linked);
+      // Upload still in flight: link the recording once it lands.
+      if (serverId && !linked.recording_id && recordingPromise) {
+        recordingPromise.then((recId) => {
+          if (!recId) return;
+          api.patch(`/events/${serverId}`, { recording_id: recId }).catch(() => {});
+        });
+      }
+
+      setDraft(null);
+      setCorrections([]);
+      setPhase("idle");
+    } finally {
+      commitInFlightRef.current = false;
     }
-
-    setDraft(null);
-    setCorrections([]);
-    setPhase("idle");
   };
 
   const confirmDraft = () => {

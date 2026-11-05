@@ -156,6 +156,8 @@ export interface ShiftState {
   deletedIds: string[];
   /** Ids whose server-side DELETE is still queued (offline). */
   pendingDeletes: string[];
+  /** Unsynced events from ended/closed shifts awaiting upload (outbox). */
+  outbox: ShiftEvent[];
   /** ISO end of the plant's current shift window (auto-end countdown source). */
   windowEnd: string | null;
   carriedOver: string[];
@@ -195,11 +197,48 @@ export function canBeTeamMember(role: Role | string | undefined): boolean {
   return !!role && !hasMinRole(role as Role, "plant_manager");
 }
 
+/**
+ * Reset operator/shift-scoped state so a different operator logging into the
+ * same device never sees the previous operator's events, line, area, or shift.
+ * Kept in sync with the fields `logout()` clears.
+ */
+function resetOperatorState(s: ShiftState): Partial<ShiftState> {
+  return {
+    user: null,
+    shiftActive: false,
+    shiftId: null,
+    shiftName: "Morning",
+    shiftType: null,
+    lineId: null,
+    line: "Packaging Line 2",
+    areaId: null,
+    area: "",
+    teamId: null,
+    teamName: null,
+    startedAt: null,
+    endedAt: null,
+    events: [],
+    outbox: [],
+    deletedIds: [],
+    pendingDeletes: [],
+    windowEnd: null,
+    carriedOver: [],
+    handover: "",
+    reportApproved: false,
+    error: null,
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                  store                                     */
 /* -------------------------------------------------------------------------- */
 
-const STORAGE_KEY = "shiftlog.state.v1";
+const STORAGE_KEY_PREFIX = "shiftlog.state.v1";
+const LEGACY_STORAGE_KEY = "shiftlog.state.v1";
+
+function storageKeyFor(userId: string | null | undefined): string {
+  return userId ? `${STORAGE_KEY_PREFIX}.${userId}` : `${STORAGE_KEY_PREFIX}.guest`;
+}
 
 const initialState: ShiftState = {
   user: null,
@@ -218,6 +257,7 @@ const initialState: ShiftState = {
   events: [],
   deletedIds: [],
   pendingDeletes: [],
+  outbox: [],
   windowEnd: null,
   carriedOver: [],
   online: true,
@@ -237,23 +277,61 @@ function emit() {
 function persist() {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    // Synced events already live on the server and can be re-fetched via
+    // /my-events — they don't need to keep sitting in localStorage. Only
+    // pending (unsynced) voice logs are worth persisting for offline mode.
+    const toPersist = {
+      ...state,
+      events: state.events.filter((e) => e.sync !== "synced"),
+      outbox: state.outbox.filter((e) => e.sync !== "synced"),
+    };
+    window.localStorage.setItem(storageKeyFor(state.user?.id), JSON.stringify(toPersist));
   } catch {
     /* storage full — keep in-memory copy */
   }
 }
 
-function hydrate() {
+function hydrate(userId?: string | null) {
   if (hydrated || typeof window === "undefined") return;
   hydrated = true;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    let raw = window.localStorage.getItem(storageKeyFor(userId));
+    // One-time migration: read from legacy shared key if operator bucket doesn't exist yet
+    if (!raw && userId) {
+      raw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    }
     if (raw) state = { ...initialState, ...(JSON.parse(raw) as ShiftState) };
     // A page reload always ends any in-flight request — never resume in loading state.
     state = { ...state, loading: false };
   } catch {
     /* ignore corrupt payload */
   }
+}
+
+/**
+ * Force a fresh hydrate from a specific operator's bucket. Used after login /
+ * restoreSession resolves the user, so we load that operator's own persisted
+ * state instead of the shared guest bucket.
+ */
+function rehydrateForUser(userId: string) {
+  hydrated = false;
+  hydrate(userId);
+}
+
+/**
+ * Keep only events that belong to today's date and the active shift. Strips
+ * yesterday's events and other operators' events from the local store so a
+ * returning operator never sees a previous shift's logs.
+ */
+function scopeEventsToActiveShift(s: ShiftState): ShiftState {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    ...s,
+    events: s.events.filter((e) => {
+      const eventDate = e.timestamp.slice(0, 10);
+      return eventDate === today && (!s.shiftId || e.shift_id === s.shiftId);
+    }),
+  };
 }
 
 export function setState(patch: Partial<ShiftState> | ((s: ShiftState) => Partial<ShiftState>)) {
@@ -298,7 +376,20 @@ export async function login(email: string, password: string): Promise<void> {
     setToken(res.access_token);
     setRefreshToken(res.refresh_token);
     const user = await api.get<User>("/auth/me");
+
+    // Different operator on this device — clear the previous operator's
+    // shift-scoped state so their events/shift/line never leak in.
+    if (state.user?.id && state.user.id !== user.id) {
+      setState(resetOperatorState);
+    }
+
+    // Load this operator's own persisted bucket (unsynced offline events, etc.)
+    rehydrateForUser(user.id);
     setState({ user, loading: false });
+
+    // Only today's events for the active shift survive into the session.
+    setState(scopeEventsToActiveShift);
+
     fetchEventsFromServer(user);
   } catch (e: unknown) {
     const raw = e instanceof Error ? e.message : "Login failed";
@@ -328,7 +419,20 @@ export async function restoreSession(): Promise<void> {
   setState({ loading: true });
   try {
     const user = await api.get<User>("/auth/me");
+
+    // Different operator on this device — clear the previous operator's
+    // shift-scoped state so their events/shift/line never leak in.
+    if (state.user?.id && state.user.id !== user.id) {
+      setState(resetOperatorState);
+    }
+
+    // Load this operator's own persisted bucket (unsynced offline events, etc.)
+    rehydrateForUser(user.id);
     setState({ user, loading: false });
+
+    // Only today's events for the active shift survive into the session.
+    setState(scopeEventsToActiveShift);
+
     fetchEventsFromServer(user);
   } catch (e: unknown) {
     clearToken();
@@ -353,6 +457,7 @@ export function logout() {
   // Full session reset: anything scoped to the operator/shift (line, area,
   // team, carried-over list, events…) must not survive into the next login —
   // a different user may pick up this device.
+  const currentUserId = state.user?.id;
   setState({
     user: null,
     shiftActive: false,
@@ -368,6 +473,7 @@ export function logout() {
     startedAt: null,
     endedAt: null,
     events: [],
+    outbox: [],
     deletedIds: [],
     pendingDeletes: [],
     windowEnd: null,
@@ -376,6 +482,11 @@ export function logout() {
     reportApproved: false,
     error: null,
   });
+  // Wipe this operator's bucket from localStorage so the next operator
+  // logging into the same device starts from a clean slate.
+  if (typeof window !== "undefined" && currentUserId) {
+    window.localStorage.removeItem(storageKeyFor(currentUserId));
+  }
 }
 
 /**
@@ -389,7 +500,11 @@ export function logout() {
 export function logoutHard(): void {
   clearToken();
   if (typeof window !== "undefined") {
-    window.localStorage.removeItem(STORAGE_KEY);
+    // Remove the legacy shared key and every per-operator bucket so no
+    // operator's state survives on a shared device.
+    Object.keys(window.localStorage)
+      .filter((k) => k.startsWith(`${STORAGE_KEY_PREFIX}.`) || k === LEGACY_STORAGE_KEY)
+      .forEach((k) => window.localStorage.removeItem(k));
   }
   window.location.replace("/");
 }
@@ -474,6 +589,11 @@ export async function endShift(handover: string): Promise<void> {
       endedAt: new Date().toISOString(),
       handover,
       loading: false,
+      // Move unsynced events to the outbox so they survive for retry when
+      // connectivity returns. Synced events are already on the server and can
+      // be re-fetched, so they don't need to linger locally.
+      outbox: [...(state.outbox ?? []), ...state.events.filter((e) => e.sync !== "synced")],
+      events: [],
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Failed to end shift";
@@ -502,13 +622,35 @@ export async function addEvent(event: ShiftEvent): Promise<string | null> {
     line_name: event.line_name ?? pickName(state.line),
     area_name: event.area_name ?? pickName(state.area),
   };
+  // Dedup: don't append an event that's conceptually already logged.
+  const existing = state.events.find(
+    (e) =>
+      e.event_type === event.event_type &&
+      e.asset === event.asset &&
+      e.timestamp === event.timestamp &&
+      e.observation === event.observation &&
+      e.operator_id === event.operator_id &&
+      e.shift_id === event.shift_id,
+  );
+  if (existing) return existing.id;
+
   setState((s) => ({ events: [...s.events, owned] }));
   if (!state.shiftId || !state.online) return null;
   try {
     const created = await api.post<{ id?: string }>(`/shifts/${state.shiftId}/events`, owned);
-    setState((s) => ({
-      events: s.events.map((e) => (e.id === owned.id ? { ...e, sync: "synced" as const } : e)),
-    }));
+    if (created?.id) {
+      // Align the local id with the server id so mergeEvents dedups on refetch.
+      const serverId = created.id as string;
+      setState((s) => ({
+        events: s.events.map((e) =>
+          e.id === owned.id ? { ...e, id: serverId, sync: "synced" as const } : e,
+        ),
+      }));
+    } else {
+      setState((s) => ({
+        events: s.events.map((e) => (e.id === owned.id ? { ...e, sync: "synced" as const } : e)),
+      }));
+    }
     return created?.id ?? null;
   } catch {
     /* will be retried by syncPending */
@@ -637,6 +779,7 @@ export async function syncPending(): Promise<void> {
     }
   }
 
+  // Retry pending events for the currently active shift.
   if (state.shiftId) {
     const pending = state.events.filter((e) => e.sync === "pending");
     for (const event of pending) {
@@ -650,6 +793,22 @@ export async function syncPending(): Promise<void> {
       }
     }
   }
+
+  // Retry outbox events from ended/closed shifts. The backend accepts
+  // POST /shifts/{shift_id}/events even after a shift is closed, so these
+  // can still land when the device comes back online.
+  for (const event of [...state.outbox]) {
+    if (event.sync !== "pending") continue;
+    try {
+      await api.post(`/shifts/${event.shift_id}/events`, event);
+      setState((s) => ({
+        outbox: s.outbox.map((e) => (e.id === event.id ? { ...e, sync: "synced" as const } : e)),
+      }));
+    } catch {
+      /* will retry on next sync */
+    }
+  }
+
   syncing = false;
 }
 
@@ -662,7 +821,10 @@ export function approveReport() {
 }
 
 export function pendingCount(s: ShiftState) {
-  return s.events.filter((e) => e.sync === "pending").length;
+  return (
+    s.events.filter((e) => e.sync === "pending").length +
+    s.outbox.filter((e) => e.sync === "pending").length
+  );
 }
 
 export function unresolvedCount(s: ShiftState) {
@@ -735,7 +897,9 @@ export function mergeEvents(serverEvents: MyEvent[]) {
         // Shift-scoped: while a shift is active, never pull in events that
         // belong to another shift (e.g. the same operator on an earlier shift
         // the same day). Events without a shift_id (older backends) still pass.
-        (!s.shiftId || !ev.shift_id || ev.shift_id === s.shiftId),
+        (!s.shiftId || !ev.shift_id || ev.shift_id === s.shiftId) &&
+        // Operator-scoped: never surface another operator's events.
+        (!s.user?.id || !ev.operator_id || ev.operator_id === s.user.id),
     );
     if (newEvents.length === 0) return s;
     return { events: [...s.events, ...newEvents] };

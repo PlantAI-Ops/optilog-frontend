@@ -73,7 +73,10 @@ async function apiFetch<T = unknown>(method: string, path: string, body?: unknow
     if (res.status === 401) {
       clearToken();
       if (typeof window !== "undefined") {
-        localStorage.removeItem("shiftlog.state.v1");
+        // Wipe all per-operator buckets so no state survives on a shared device.
+        Object.keys(localStorage)
+          .filter((k) => k.startsWith("shiftlog.state.v1.") || k === "shiftlog.state.v1")
+          .forEach((k) => localStorage.removeItem(k));
         window.location.replace("/");
       }
     }
@@ -133,7 +136,10 @@ export async function postFormData<T = unknown>(path: string, formData: FormData
     if (res.status === 401) {
       clearToken();
       if (typeof window !== "undefined") {
-        localStorage.removeItem("shiftlog.state.v1");
+        // Wipe all per-operator buckets so no state survives on a shared device.
+        Object.keys(localStorage)
+          .filter((k) => k.startsWith("shiftlog.state.v1.") || k === "shiftlog.state.v1")
+          .forEach((k) => localStorage.removeItem(k));
         window.location.replace("/");
       }
     }
